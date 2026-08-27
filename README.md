@@ -145,3 +145,22 @@ npm run dev
   as inpatient-first, then admission time.
 - See each module's git history / the agent reports in this build's transcript for the
   full list of documented assumptions where the spec was ambiguous.
+
+
+Running Step : 
+1: run the UI : 
+cd /path/to/HAP/UI_HA
+npm create vite@latest web -- --template react-ts
+cd web
+npm install
+npm run dev
+
+2: running fastAPI
+cd /path/to/HAP/UI_HA/backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+API for swagger page : http://localhost:8000/docs
+
