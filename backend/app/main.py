@@ -12,7 +12,14 @@ from app.modules.patients.router import router as patients_router
 from app.modules.pharmacy.router import router as pharmacy_router
 from app.modules.transfers.router import router as transfers_router
 
-app = FastAPI(title=settings.app_name)
+app = FastAPI(
+    title=settings.app_name,
+    version="1.0.0",
+    description="Hospital Management System API",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+)
 
 app.add_middleware(
     CORSMiddleware,
