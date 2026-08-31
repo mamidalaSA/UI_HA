@@ -1,0 +1,43 @@
+{
+  "folders": [
+    { "name": "hms (root)", "path": "." },
+    { "name": "backend", "path": "backend" },
+    { "name": "web", "path": "web" },
+    { "name": "mobile", "path": "mobile" }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder:backend}/.venv/Scripts/python.exe",
+    "python.analysis.extraPaths": ["${workspaceFolder:backend}"],
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": ["tests"],
+    "editor.formatOnSave": true,
+    "[python]": {
+      "editor.defaultFormatter": "ms-python.black-formatter"
+    },
+    "[typescript][typescriptreact][javascript][javascriptreact]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "eslint.workingDirectories": [
+      { "directory": "web", "changeProcessCWD": true },
+      { "directory": "mobile", "changeProcessCWD": true }
+    ],
+    "tailwindCSS.experimental.classRegex": [["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"]],
+    "files.exclude": {
+      "**/.venv": true,
+      "**/node_modules": true,
+      "**/__pycache__": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-python.python",
+      "ms-python.vscode-pylance",
+      "ms-python.black-formatter",
+      "dbaeumer.vscode-eslint",
+      "esbenp.prettier-vscode",
+      "bradlc.vscode-tailwindcss",
+      "ms-azuretools.vscode-docker",
+      "eamodio.gitlens"
+    ]
+  }
+}

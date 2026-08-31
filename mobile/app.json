@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "HMS Patient",
+    "slug": "hms-patient",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hms.patient"
+    },
+    "android": {
+      "package": "com.hms.patient",
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
