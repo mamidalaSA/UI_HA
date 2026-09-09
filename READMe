@@ -1,1 +1,24 @@
-thi sis develop brnch 
+Service	URL / port	Status
+PostgreSQL 16	localhost:5432 (hms/hms, db hms)	✅ brew service
+Redis 7	localhost:6379	✅ brew service
+Backend API (FastAPI)	http://localhost:8000 — Swagger: http://localhost:8000/docs	✅ running
+Web app (React/Vite)	http://localhost:5173	✅ running
+Celery worker + beat	(alert engine)	✅ running
+MinIO (lab-file uploads) and the Expo mobile app were left off — both optional.
+
+Steps I performed
+brew install postgresql@16 redis + brew services start both
+Created role/db: CREATE ROLE hms LOGIN PASSWORD 'hms' CREATEDB / CREATE DATABASE hms OWNER hms
+backend/: cp .env.example .env, python3 -m venv .venv, pip install -r requirements.txt
+Fixed one dependency bug: bcrypt 5.x breaks passlib 1.7.4 (seeding crashed with "password cannot be longer than 72 bytes"). Pinned bcrypt==4.0.1 in requirements.txt and reinstalled.
+alembic upgrade head → all tables; python seed.py → demo data
+uvicorn app.main:app — verified /api/health, login returns JWT for every role, /api/doctor/patients returns the demo patient
+web/: npm install, npm run dev — HTTP 200
+Started Celery worker + beat against Redis
+Demo logins
+admin@cityhospital.com / Admin@123 · reception@cityhospital.com / Reception@123 · doctor.verma@cityhospital.com / Doctor@123 · nurse@cityhospital.com / Nurse@123 · lab@cityhospital.com / Lab@123 · pharmacy@cityhospital.com / Pharmacy@123. OTP for any verification flow: 123456.
+
+Documentation
+Full onboarding guide written to docs/RUNNING_LOCALLY.md — prerequisites, every service explained, step-by-step setup, DB reset instructions, project layout, a start/stop cheat-sheet, and a troubleshooting table (including the bcrypt fix).
+
+Note: only backend/requirements.txt and the new doc were changed — both uncommitted. Background processes (uvicorn, vite, celery) will keep running until you stop them or reboot; logs are in backend/uvicorn.log, web/vite.log, backend/celery-*.log.
