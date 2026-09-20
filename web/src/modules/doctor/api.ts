@@ -16,6 +16,13 @@ export interface DepartmentOption {
   code: string;
 }
 
+export interface MedicineFormularyOption {
+  id: string;
+  name: string;
+  default_dosage: string | null;
+  is_approved: boolean;
+}
+
 export const doctorApi = {
   listPatients: () => apiClient.get<DoctorPatientListResponse>("/api/doctor/patients").then((r) => r.data),
 
@@ -23,6 +30,13 @@ export const doctorApi = {
   // (reference-data GETs there aren't admin-gated) — used to populate the transfer
   // modal's department picker with real IDs instead of names.
   listDepartments: () => apiClient.get<DepartmentOption[]>("/api/admin/departments").then((r) => r.data),
+
+  // Same reference-data pattern as listDepartments above — used to constrain the
+  // prescription form's medicine names to what the pharmacy formulary actually
+  // recognizes, so a prescription can never be written for a name pharmacy stock
+  // has no exact match for (which otherwise silently fails to dispense later).
+  listMedicineFormulary: () =>
+    apiClient.get<MedicineFormularyOption[]>("/api/admin/medicine-formulary").then((r) => r.data),
 
   getNotes: (patientId: string) =>
     apiClient.get<ExaminationNote[]>(`/api/patients/${patientId}/notes`).then((r) => r.data),

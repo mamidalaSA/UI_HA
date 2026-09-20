@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Panel } from "@/components/Panel";
 import { Badge } from "@/components/Badge";
 import { DataTable, type Column } from "@/components/DataTable";
-import { doctorApi } from "../api";
+import { doctorApi, type MedicineFormularyOption } from "../api";
 import { calcAge, formatDate, formatDateTime, statusTone, testStatusTone } from "../utils";
 import type { DoctorPatient, ExaminationNote, Frequency, Prescription, PrescriptionLineInput, Route, TestOrder } from "../types";
 import { TransferModal } from "../components/TransferModal";
@@ -51,6 +51,7 @@ export default function PatientDetailPage() {
   const [rxNotes, setRxNotes] = useState("");
   const [lines, setLines] = useState<PrescriptionLineInput[]>([emptyLine()]);
   const [savingRx, setSavingRx] = useState(false);
+  const [formulary, setFormulary] = useState<MedicineFormularyOption[]>([]);
 
   const [transferOpen, setTransferOpen] = useState(false);
   const [discharging, setDischarging] = useState(false);
@@ -81,6 +82,13 @@ export default function PatientDetailPage() {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    doctorApi
+      .listMedicineFormulary()
+      .then((rows) => setFormulary(rows.filter((r) => r.is_approved)))
+      .catch(() => setFormulary([]));
+  }, []);
 
   async function submitNote(e: FormEvent) {
     e.preventDefault();
@@ -304,15 +312,31 @@ export default function PatientDetailPage() {
           <p className="text-sm font-semibold text-slate-700">
             {activeRx ? `Revise prescription (currently v${activeRx.version})` : "New prescription"}
           </p>
+          <p className="text-xs text-slate-400">
+            Medicine names are limited to the pharmacy's approved formulary, so every prescribed line can actually be
+            dispensed and billed later.
+          </p>
           {lines.map((line, idx) => (
             <div key={idx} className="grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3 sm:grid-cols-4">
-              <input
+              <select
                 value={line.medicine_name}
-                onChange={(e) => updateLine(idx, { medicine_name: e.target.value })}
-                placeholder="Medicine name"
+                onChange={(e) => {
+                  const chosen = formulary.find((f) => f.name === e.target.value);
+                  updateLine(idx, {
+                    medicine_name: e.target.value,
+                    dosage: !line.dosage && chosen?.default_dosage ? chosen.default_dosage : line.dosage,
+                  });
+                }}
                 required
                 className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-              />
+              >
+                <option value="">Select medicine</option>
+                {formulary.map((f) => (
+                  <option key={f.id} value={f.name}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
               <input
                 value={line.dosage}
                 onChange={(e) => updateLine(idx, { dosage: e.target.value })}
