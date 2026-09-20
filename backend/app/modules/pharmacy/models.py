@@ -16,6 +16,12 @@ class DispenseStatus(str, enum.Enum):
     dispensed = "dispensed"
 
 
+class BillingPaymentStatus(str, enum.Enum):
+    pending = "pending"
+    paid = "paid"
+    waived = "waived"
+
+
 class PharmacyPrescription(Base, UUIDPKMixin, TimestampMixin):
     """Link between a prescription and its dispensing status in the pharmacy queue."""
 
@@ -70,3 +76,12 @@ class BillingEntry(Base, UUIDPKMixin):
     description: Mapped[str] = mapped_column(String(255))
     amount: Mapped[float] = mapped_column(DECIMAL(10, 2))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    # Collected at the pharmacy counter, independent of the patient's consult-fee
+    # billing in the patients module — dispensing has its own bill/collect cycle.
+    payment_status: Mapped[BillingPaymentStatus] = mapped_column(
+        Enum(BillingPaymentStatus, name="billing_payment_status"), default=BillingPaymentStatus.pending, index=True
+    )
+    receipt_number: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    collected_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

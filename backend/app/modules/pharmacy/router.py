@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_role
@@ -9,9 +9,14 @@ from app.db.session import get_db
 from app.modules.auth.models import User
 from app.modules.pharmacy import service
 from app.modules.pharmacy.schemas import (
+    CollectBillRequest,
+    CollectBillResponse,
     DispenseLogOut,
     DispenseRequest,
     DispenseResponse,
+    PatientBillingSummaryOut,
+    PatientMedicineHistoryItemOut,
+    PendingBillOut,
     QueueItemOut,
     ReturnRequest,
     StockItemOut,
@@ -38,7 +43,7 @@ def dispense(
 ):
     overrides = {line.prescription_line_id: line.quantity for line in (payload.lines or [])}
     try:
-        return service.dispense(db, rx_id=rx_id, caller=user, overrides=overrides)
+        return service.dispense(db, rx_id=rx_id, caller=user, overrides=overrides, receipt_number=payload.receipt_number)
     except service.DispenseError as exc:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -90,5 +95,44 @@ def create_return(
 ):
     try:
         return service.create_return(db, payload=payload, caller=user)
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+
+@router.get("/pharmacy/patients", response_model=list[PatientBillingSummaryOut])
+def list_patients(
+    q: str | None = Query(default=None, description="Filter by patient name (case-insensitive substring)"),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_role(Role.pharmacist, Role.admin)),
+):
+    return service.list_patients_with_history(db, search=q)
+
+
+@router.get("/pharmacy/patients/{patient_id}/history", response_model=list[PatientMedicineHistoryItemOut])
+def patient_history(
+    patient_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_role(Role.pharmacist, Role.admin)),
+):
+    return service.get_patient_history(db, patient_id)
+
+
+@router.get("/pharmacy/billing/pending", response_model=list[PendingBillOut])
+def pending_bills(
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_role(Role.pharmacist, Role.admin)),
+):
+    return service.list_pending_bills(db)
+
+
+@router.patch("/pharmacy/patients/{patient_id}/billing/collect", response_model=CollectBillResponse)
+def collect_bill(
+    patient_id: uuid.UUID,
+    payload: CollectBillRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.pharmacist)),
+):
+    try:
+        return service.collect_patient_bill(db, patient_id=patient_id, receipt_number=payload.receipt_number, caller=user)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc

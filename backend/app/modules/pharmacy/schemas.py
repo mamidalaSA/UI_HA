@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.pharmacy.models import DispenseStatus
+from app.modules.pharmacy.models import BillingPaymentStatus, DispenseStatus
 
 
 class PrescriptionLineOut(BaseModel):
@@ -50,6 +50,11 @@ class DispenseRequest(BaseModel):
     # defaults to a quantity of 1 unit dispensed.
     lines: list[DispenseLineOverride] | None = None
 
+    # Collect payment for this dispense in the same action, at the pharmacy counter.
+    # When omitted, the bill is created pending and can be collected later from the
+    # Billing/Patients screens.
+    receipt_number: str | None = None
+
 
 class ShortageItem(BaseModel):
     medicine_name: str
@@ -61,6 +66,8 @@ class DispenseResponse(BaseModel):
     status: DispenseStatus
     dispensed_lines: int = 0
     total_amount: float = 0
+    payment_status: BillingPaymentStatus | None = None
+    receipt_number: str | None = None
     shortages: list[ShortageItem] = Field(default_factory=list)
 
 
@@ -105,3 +112,50 @@ class DispenseLogOut(BaseModel):
     kind: str
     notes: str | None = None
     dispensed_at: datetime
+
+
+class PatientMedicineHistoryItemOut(BaseModel):
+    """One dispensed-medicine line for a patient's pharmacy history."""
+
+    id: uuid.UUID  # billing entry id
+    medicine_name: str
+    quantity: int | None = None
+    amount: float
+    payment_status: BillingPaymentStatus
+    receipt_number: str | None = None
+    dispensed_at: datetime
+    paid_at: datetime | None = None
+
+
+class PendingBillOut(BaseModel):
+    """One patient with outstanding (uncollected) pharmacy charges."""
+
+    patient_id: uuid.UUID
+    patient_name: str
+    pending_amount: float
+    pending_entries: int
+    last_dispensed_at: datetime
+
+
+class PatientBillingSummaryOut(BaseModel):
+    """One row per patient who has ever had a pharmacy dispense — the lasting
+    lookup list, independent of queue/payment status (both stop showing a patient
+    once dispensed/collected)."""
+
+    patient_id: uuid.UUID
+    patient_name: str
+    total_entries: int
+    pending_amount: float
+    paid_amount: float
+    last_dispensed_at: datetime
+
+
+class CollectBillRequest(BaseModel):
+    receipt_number: str = Field(min_length=1)
+
+
+class CollectBillResponse(BaseModel):
+    patient_id: uuid.UUID
+    collected_amount: float
+    entries_collected: int
+    receipt_number: str

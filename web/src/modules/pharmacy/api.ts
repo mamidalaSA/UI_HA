@@ -1,6 +1,7 @@
 import { apiClient } from "@/api/client";
 
 export type DispenseStatus = "pending" | "out_of_stock" | "dispensed";
+export type BillingPaymentStatus = "pending" | "paid" | "waived";
 
 export interface PrescriptionLine {
   id: string;
@@ -35,6 +36,8 @@ export interface DispenseResponse {
   status: DispenseStatus;
   dispensed_lines: number;
   total_amount: number;
+  payment_status: BillingPaymentStatus | null;
+  receipt_number: string | null;
   shortages: ShortageItem[];
 }
 
@@ -87,8 +90,10 @@ export async function fetchQueue(): Promise<QueueItem[]> {
   return data;
 }
 
-export async function dispenseRx(rxId: string): Promise<DispenseResponse> {
-  const { data } = await apiClient.patch<DispenseResponse>(`/api/pharmacy/${rxId}/dispense`, {});
+export async function dispenseRx(rxId: string, receiptNumber?: string): Promise<DispenseResponse> {
+  const { data } = await apiClient.patch<DispenseResponse>(`/api/pharmacy/${rxId}/dispense`, {
+    receipt_number: receiptNumber || undefined,
+  });
   return data;
 }
 
@@ -109,5 +114,64 @@ export async function updateStock(id: string, payload: StockItemUpdate): Promise
 
 export async function postReturn(payload: ReturnRequest): Promise<DispenseLog> {
   const { data } = await apiClient.post<DispenseLog>("/api/pharmacy/returns", payload);
+  return data;
+}
+
+export interface PatientMedicineHistoryItem {
+  id: string;
+  medicine_name: string;
+  quantity: number | null;
+  amount: number;
+  payment_status: BillingPaymentStatus;
+  receipt_number: string | null;
+  dispensed_at: string;
+  paid_at: string | null;
+}
+
+export interface PendingBill {
+  patient_id: string;
+  patient_name: string;
+  pending_amount: number;
+  pending_entries: number;
+  last_dispensed_at: string;
+}
+
+export interface CollectBillResponse {
+  patient_id: string;
+  collected_amount: number;
+  entries_collected: number;
+  receipt_number: string;
+}
+
+export interface PatientBillingSummary {
+  patient_id: string;
+  patient_name: string;
+  total_entries: number;
+  pending_amount: number;
+  paid_amount: number;
+  last_dispensed_at: string;
+}
+
+export async function fetchPatientsWithHistory(search?: string): Promise<PatientBillingSummary[]> {
+  const { data } = await apiClient.get<PatientBillingSummary[]>("/api/pharmacy/patients", {
+    params: search ? { q: search } : undefined,
+  });
+  return data;
+}
+
+export async function fetchPatientHistory(patientId: string): Promise<PatientMedicineHistoryItem[]> {
+  const { data } = await apiClient.get<PatientMedicineHistoryItem[]>(`/api/pharmacy/patients/${patientId}/history`);
+  return data;
+}
+
+export async function fetchPendingBills(): Promise<PendingBill[]> {
+  const { data } = await apiClient.get<PendingBill[]>("/api/pharmacy/billing/pending");
+  return data;
+}
+
+export async function collectBill(patientId: string, receiptNumber: string): Promise<CollectBillResponse> {
+  const { data } = await apiClient.patch<CollectBillResponse>(`/api/pharmacy/patients/${patientId}/billing/collect`, {
+    receipt_number: receiptNumber,
+  });
   return data;
 }

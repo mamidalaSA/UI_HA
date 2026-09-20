@@ -4,9 +4,8 @@ import type { QueueItem } from "./api";
 
 interface QueueTableProps {
   items: QueueItem[];
-  dispensingId: string | null;
-  errors: Record<string, string>;
   onDispense: (item: QueueItem) => void;
+  onViewHistory: (item: QueueItem) => void;
 }
 
 function statusTone(status: QueueItem["status"]): "amber" | "red" | "green" {
@@ -15,7 +14,7 @@ function statusTone(status: QueueItem["status"]): "amber" | "red" | "green" {
   return "amber";
 }
 
-export function QueueTable({ items, dispensingId, errors, onDispense }: QueueTableProps) {
+export function QueueTable({ items, onDispense, onViewHistory }: QueueTableProps) {
   const columns: Column<QueueItem>[] = [
     {
       header: "Patient",
@@ -50,16 +49,21 @@ export function QueueTable({ items, dispensingId, errors, onDispense }: QueueTab
     {
       header: "",
       render: (row) => (
-        <div>
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={dispensingId === row.id}
-            onClick={() => onDispense(row)}
-            className="rounded-lg bg-pharmacy-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => onViewHistory(row)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
           >
-            {dispensingId === row.id ? "Dispensing…" : "Dispense"}
+            History
           </button>
-          {errors[row.id] && <p className="mt-1 max-w-[220px] text-xs font-medium text-red-600">{errors[row.id]}</p>}
+          <button
+            type="button"
+            onClick={() => onDispense(row)}
+            className="rounded-lg bg-pharmacy-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+          >
+            Dispense
+          </button>
         </div>
       ),
     },

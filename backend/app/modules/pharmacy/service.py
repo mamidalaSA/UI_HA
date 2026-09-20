@@ -2,17 +2,29 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.core.audit import record_audit
 from app.core.notify import notify_user, ward_nurses
+from app.db.mixins import utcnow
 from app.modules.auth.models import User
 from app.modules.doctors.models import Prescription, PrescriptionLine
 from app.modules.patients.models import Patient
-from app.modules.pharmacy.models import BillingEntry, DispenseLog, DispenseStatus, PharmacyPrescription, StockItem
+from app.modules.pharmacy.models import (
+    BillingEntry,
+    BillingPaymentStatus,
+    DispenseLog,
+    DispenseStatus,
+    PharmacyPrescription,
+    StockItem,
+)
 from app.modules.pharmacy.schemas import (
+    CollectBillResponse,
     DispenseResponse,
+    PatientBillingSummaryOut,
+    PatientMedicineHistoryItemOut,
+    PendingBillOut,
     PrescriptionLineOut,
     QueueItemOut,
     ReturnRequest,
@@ -47,14 +59,17 @@ def _json_safe(values: dict) -> dict:
 
 
 def get_queue(db: Session) -> list[QueueItemOut]:
-    """Pending pharmacy queue, sorted by the patient's admission time ascending (spec:
+    """Pharmacy work queue, sorted by the patient's admission time ascending (spec:
     'Pharmacist sees queue sorted by admission time'). Patients without an admitted_at
-    (not yet admitted) sort last rather than first."""
+    (not yet admitted) sort last rather than first. Includes both pending and
+    out_of_stock entries — an out-of-stock dispense attempt must stay visible (and
+    retryable once stock is restocked) instead of silently disappearing; only
+    dispensed entries drop off (they're done, and live on in patient history)."""
     rows = db.execute(
         select(PharmacyPrescription, Patient, Prescription)
         .join(Patient, PharmacyPrescription.patient_id == Patient.id)
         .join(Prescription, PharmacyPrescription.prescription_id == Prescription.id)
-        .where(PharmacyPrescription.status == DispenseStatus.pending)
+        .where(PharmacyPrescription.status.in_([DispenseStatus.pending, DispenseStatus.out_of_stock]))
         .order_by(Patient.admitted_at.asc().nulls_last())
     ).all()
 
@@ -102,6 +117,7 @@ def dispense(
     rx_id: uuid.UUID,
     caller: User,
     overrides: dict[uuid.UUID, int] | None = None,
+    receipt_number: str | None = None,
 ) -> DispenseResponse:
     pharmacy_rx = db.get(PharmacyPrescription, rx_id)
     if pharmacy_rx is None:
@@ -170,6 +186,9 @@ def dispense(
         db.commit()
         raise DispenseError(shortages)
 
+    collect_now = bool(receipt_number and receipt_number.strip())
+    now = utcnow() if collect_now else None
+
     total_amount = 0.0
     dispensed_lines = 0
     for line, item, take in plan:
@@ -185,14 +204,18 @@ def dispense(
         db.flush()  # populate log.id for the billing entry FK
 
         amount = float(item.unit_price) * take
-        db.add(
-            BillingEntry(
-                patient_id=pharmacy_rx.patient_id,
-                dispense_log_id=log.id,
-                description=line.medicine_name,
-                amount=amount,
-            )
+        entry = BillingEntry(
+            patient_id=pharmacy_rx.patient_id,
+            dispense_log_id=log.id,
+            description=line.medicine_name,
+            amount=amount,
         )
+        if collect_now:
+            entry.payment_status = BillingPaymentStatus.paid
+            entry.receipt_number = receipt_number.strip()
+            entry.collected_by = caller.id
+            entry.paid_at = now
+        db.add(entry)
         total_amount += amount
         dispensed_lines += 1
 
@@ -204,7 +227,12 @@ def dispense(
         action="dispense",
         entity="pharmacy_prescriptions",
         entity_id=pharmacy_rx.id,
-        new_value={"dispensed_lines": dispensed_lines, "total_amount": total_amount},
+        new_value={
+            "dispensed_lines": dispensed_lines,
+            "total_amount": total_amount,
+            "payment_collected": collect_now,
+            "receipt_number": receipt_number.strip() if collect_now else None,
+        },
     )
 
     # Spec step 5: "... nurse notified". Notify every head_nurse assigned to the patient's ward.
@@ -220,7 +248,13 @@ def dispense(
             )
 
     db.commit()
-    return DispenseResponse(status=pharmacy_rx.status, dispensed_lines=dispensed_lines, total_amount=total_amount)
+    return DispenseResponse(
+        status=pharmacy_rx.status,
+        dispensed_lines=dispensed_lines,
+        total_amount=total_amount,
+        payment_status=BillingPaymentStatus.paid if collect_now else BillingPaymentStatus.pending,
+        receipt_number=receipt_number.strip() if collect_now else None,
+    )
 
 
 def list_stock(db: Session) -> list[StockItem]:
@@ -319,3 +353,146 @@ def create_return(db: Session, *, payload: ReturnRequest, caller: User) -> Dispe
     db.commit()
     db.refresh(log)
     return log
+
+
+# ---------------------------------------------------------------------------
+# Per-patient medicine history + pharmacy-counter billing (spec: every dispense
+# already creates a BillingEntry — this is the read/collect side of it, kept
+# entirely within pharmacy rather than routed through reception's billing).
+# ---------------------------------------------------------------------------
+
+
+def get_patient_history(db: Session, patient_id: uuid.UUID) -> list[PatientMedicineHistoryItemOut]:
+    """Every medicine ever dispensed to this patient, newest first, with its
+    pharmacy payment status."""
+    rows = db.execute(
+        select(BillingEntry, DispenseLog)
+        .outerjoin(DispenseLog, BillingEntry.dispense_log_id == DispenseLog.id)
+        .where(BillingEntry.patient_id == patient_id)
+        .order_by(BillingEntry.created_at.desc())
+    ).all()
+
+    return [
+        PatientMedicineHistoryItemOut(
+            id=entry.id,
+            medicine_name=entry.description,
+            quantity=log.quantity if log is not None else None,
+            amount=float(entry.amount),
+            payment_status=entry.payment_status,
+            receipt_number=entry.receipt_number,
+            dispensed_at=log.dispensed_at if log is not None else entry.created_at,
+            paid_at=entry.paid_at,
+        )
+        for entry, log in rows
+    ]
+
+
+def list_patients_with_history(db: Session, *, search: str | None = None) -> list[PatientBillingSummaryOut]:
+    """Every patient who has ever had a pharmacy dispense, newest activity first —
+    the lasting lookup list. Unlike the dispense queue (pending orders only) and the
+    pending-bills list (unpaid only), a patient never drops off this one just
+    because their order was fulfilled and their bill was collected."""
+    pending_amount = func.sum(
+        case((BillingEntry.payment_status == BillingPaymentStatus.pending, BillingEntry.amount), else_=0)
+    )
+    paid_amount = func.sum(
+        case((BillingEntry.payment_status == BillingPaymentStatus.paid, BillingEntry.amount), else_=0)
+    )
+    stmt = (
+        select(
+            BillingEntry.patient_id,
+            Patient.full_name,
+            func.count(BillingEntry.id),
+            pending_amount,
+            paid_amount,
+            func.max(BillingEntry.created_at),
+        )
+        .join(Patient, Patient.id == BillingEntry.patient_id)
+        .group_by(BillingEntry.patient_id, Patient.full_name)
+        .order_by(func.max(BillingEntry.created_at).desc())
+    )
+    if search:
+        stmt = stmt.where(Patient.full_name.ilike(f"%{search.strip()}%"))
+
+    rows = db.execute(stmt).all()
+    return [
+        PatientBillingSummaryOut(
+            patient_id=patient_id,
+            patient_name=full_name,
+            total_entries=total_entries,
+            pending_amount=float(pending),
+            paid_amount=float(paid),
+            last_dispensed_at=last_at,
+        )
+        for patient_id, full_name, total_entries, pending, paid, last_at in rows
+    ]
+
+
+def list_pending_bills(db: Session) -> list[PendingBillOut]:
+    """One row per patient with at least one uncollected pharmacy charge —
+    the pharmacist's billing/collection queue."""
+    rows = db.execute(
+        select(
+            BillingEntry.patient_id,
+            Patient.full_name,
+            func.sum(BillingEntry.amount),
+            func.count(BillingEntry.id),
+            func.max(BillingEntry.created_at),
+        )
+        .join(Patient, Patient.id == BillingEntry.patient_id)
+        .where(BillingEntry.payment_status == BillingPaymentStatus.pending)
+        .group_by(BillingEntry.patient_id, Patient.full_name)
+        .order_by(func.max(BillingEntry.created_at).asc())
+    ).all()
+
+    return [
+        PendingBillOut(
+            patient_id=patient_id,
+            patient_name=full_name,
+            pending_amount=float(total),
+            pending_entries=count,
+            last_dispensed_at=last_at,
+        )
+        for patient_id, full_name, total, count, last_at in rows
+    ]
+
+
+def collect_patient_bill(
+    db: Session, *, patient_id: uuid.UUID, receipt_number: str, caller: User
+) -> CollectBillResponse:
+    """Marks every currently-pending pharmacy billing entry for this patient as
+    paid in one counter transaction, the way the dispense-side bill is meant to be
+    settled — at the pharmacy, not through reception."""
+    entries = list(
+        db.execute(
+            select(BillingEntry).where(
+                BillingEntry.patient_id == patient_id,
+                BillingEntry.payment_status == BillingPaymentStatus.pending,
+            )
+        ).scalars()
+    )
+    if not entries:
+        raise LookupError("No pending pharmacy charges for this patient")
+
+    now = utcnow()
+    total = 0.0
+    for entry in entries:
+        entry.payment_status = BillingPaymentStatus.paid
+        entry.receipt_number = receipt_number
+        entry.collected_by = caller.id
+        entry.paid_at = now
+        total += float(entry.amount)
+
+    record_audit(
+        db,
+        user_id=caller.id,
+        action="collect_payment",
+        entity="billing_entries",
+        entity_id=patient_id,
+        new_value={"receipt_number": receipt_number, "collected_amount": total, "entries": len(entries)},
+    )
+    db.commit()
+
+    return CollectBillResponse(
+        patient_id=patient_id, collected_amount=total, entries_collected=len(entries), receipt_number=receipt_number
+    )

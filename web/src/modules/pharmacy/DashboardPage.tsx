@@ -1,9 +1,10 @@
-import axios from "axios";
 import { useCallback, useEffect, useState } from "react";
 import { IconBell, IconClipboard, IconPill } from "@/components/icons";
 import { Panel } from "@/components/Panel";
 import { StatCard } from "@/components/StatCard";
-import { dispenseRx, fetchLowStock, fetchQueue, type DispenseConflict, type QueueItem } from "./api";
+import { fetchLowStock, fetchQueue, type QueueItem } from "./api";
+import { DispenseModal } from "./DispenseModal";
+import { PatientHistoryModal } from "./PatientHistoryModal";
 import { QueueTable } from "./QueueTable";
 
 // There is no backend endpoint that returns dispense history (only a single DispenseLog is
@@ -39,8 +40,8 @@ export default function DashboardPage() {
   const [lowStockCount, setLowStockCount] = useState(0);
   const [dispensedToday, setDispensedToday] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [dispensingId, setDispensingId] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [historyTarget, setHistoryTarget] = useState<QueueItem | null>(null);
+  const [dispenseTarget, setDispenseTarget] = useState<QueueItem | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,33 +58,6 @@ export default function DashboardPage() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  async function handleDispense(item: QueueItem) {
-    setDispensingId(item.id);
-    setErrors((prev) => ({ ...prev, [item.id]: "" }));
-    try {
-      await dispenseRx(item.id);
-      setDispensedToday(bumpDispensedToday());
-      await load();
-    } catch (err) {
-      let message = "Dispense failed. Please try again.";
-      if (axios.isAxiosError<{ detail?: DispenseConflict | string }>(err)) {
-        const detail = err.response?.data?.detail;
-        if (detail && typeof detail === "object" && Array.isArray(detail.shortages)) {
-          const shortages = detail.shortages
-            .map((s) => `${s.medicine_name} (need ${s.required_quantity}, have ${s.available_quantity})`)
-            .join(", ");
-          message = `Out of stock — ${shortages}`;
-        } else if (typeof detail === "string") {
-          message = detail;
-        }
-      }
-      setErrors((prev) => ({ ...prev, [item.id]: message }));
-      await load();
-    } finally {
-      setDispensingId(null);
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -114,9 +88,22 @@ export default function DashboardPage() {
         {loading ? (
           <p className="py-6 text-center text-sm text-slate-400">Loading…</p>
         ) : (
-          <QueueTable items={queue} dispensingId={dispensingId} errors={errors} onDispense={handleDispense} />
+          <QueueTable items={queue} onDispense={setDispenseTarget} onViewHistory={setHistoryTarget} />
         )}
       </Panel>
+      <DispenseModal
+        item={dispenseTarget}
+        onClose={() => setDispenseTarget(null)}
+        onDispensed={() => {
+          setDispensedToday(bumpDispensedToday());
+          void load();
+        }}
+      />
+      <PatientHistoryModal
+        patientId={historyTarget?.patient_id ?? null}
+        patientName={historyTarget?.patient_name}
+        onClose={() => setHistoryTarget(null)}
+      />
     </div>
   );
 }
