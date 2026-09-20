@@ -42,6 +42,10 @@ class PatientCreate(BaseModel):
     # kicking off the online payment flow (spec: "Payment can be deferred").
     defer_payment: bool = False
 
+    # Optional receptionist override — pick a doctor at registration time instead
+    # of relying on chief-complaint auto-assignment.
+    doctor_id: uuid.UUID | None = None
+
     @model_validator(mode="after")
     def _validate_fir(self) -> "PatientCreate":
         if self.medico_legal and not self.fir_number:

@@ -75,6 +75,7 @@ class VitalsCreate(BaseModel):
     resp_rate: int | None = None
     blood_glucose: float | None = None
     gcs_score: int | None = None
+    notes: str | None = None
 
 
 class VitalsOut(BaseModel):
@@ -94,6 +95,7 @@ class VitalsOut(BaseModel):
     gcs_score: int | None
     flagged: bool
     flag_reason: str | None
+    notes: str | None
 
 
 class EscalationCreate(BaseModel):

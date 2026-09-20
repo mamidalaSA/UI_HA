@@ -194,6 +194,22 @@ def mark_payment_paid_from_webhook(db: Session, patient: Patient) -> Patient:
 # ---------------------------------------------------------------------------
 
 
+def _assign_doctor_manually(db: Session, patient: Patient, doctor_id: uuid.UUID) -> None:
+    """Receptionist override: assign a specific doctor at registration time instead
+    of running chief-complaint auto-assignment. Derives department_id/consult_fee
+    from the chosen doctor, same as auto-assignment would."""
+    doctor = db.get(Doctor, doctor_id)
+    if doctor is None or not doctor.is_active:
+        raise PatientError("Selected doctor is not available", 400)
+    patient.doctor_id = doctor.id
+    patient.department_id = doctor.department_id
+    fee_row = db.execute(
+        select(DepartmentFee).where(DepartmentFee.department_id == doctor.department_id)
+    ).scalar_one_or_none()
+    if fee_row is not None:
+        patient.consult_fee = fee_row.consult_fee
+
+
 def create_patient(db: Session, payload: PatientCreate, *, current_user: User) -> Patient:
     patient = Patient(
         full_name=payload.full_name,
@@ -224,6 +240,9 @@ def create_patient(db: Session, payload: PatientCreate, *, current_user: User) -
     db.add(patient)
     db.flush()  # assign patient.id for downstream calls without committing yet
 
+    if payload.doctor_id is not None:
+        _assign_doctor_manually(db, patient, payload.doctor_id)
+
     if payload.intake_channel == IntakeChannel.phone:
         # Spec: "System sends appointment confirmation SMS when draft is saved."
         get_sms_provider().send(
@@ -237,7 +256,8 @@ def create_patient(db: Session, payload: PatientCreate, *, current_user: User) -
         send_otp(db, mobile=patient.mobile, purpose="verify_mobile")
 
     if payload.intake_channel == IntakeChannel.emergency:
-        run_auto_assignment(db, patient)
+        if payload.doctor_id is None:
+            run_auto_assignment(db, patient)
         if payload.defer_payment:
             patient.payment_status = PaymentStatus.deferred
         elif patient.consult_fee is not None:
@@ -381,7 +401,7 @@ def activate_patient(
     patient.profile_status = ProfileStatus.active
     patient.admitted_at = _utcnow()
 
-    if not skip_auto_assign:
+    if not skip_auto_assign and patient.doctor_id is None:
         run_auto_assignment(db, patient)
 
     if patient.payment_status not in (PaymentStatus.deferred, PaymentStatus.paid, PaymentStatus.waived):

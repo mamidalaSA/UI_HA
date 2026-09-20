@@ -77,6 +77,23 @@ export interface PatientCreatePayload {
   medico_legal: boolean;
   fir_number?: string | null;
   defer_payment?: boolean;
+  doctor_id?: string | null;
+}
+
+export interface Doctor {
+  id: string;
+  user_id: string;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  is_active: boolean;
+  department_id: string;
+  specialty: string;
+}
+
+export async function listDoctors(): Promise<Doctor[]> {
+  const { data } = await apiClient.get<Doctor[]>("/api/admin/doctors");
+  return data;
 }
 
 export async function listPatients(status?: ProfileStatus): Promise<PatientListItem[]> {

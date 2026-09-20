@@ -80,6 +80,7 @@ export interface VitalsCreatePayload {
   resp_rate?: number | null;
   blood_glucose?: number | null;
   gcs_score?: number | null;
+  notes?: string | null;
 }
 
 export interface Vitals extends VitalsCreatePayload {

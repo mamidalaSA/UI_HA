@@ -43,3 +43,4 @@ class Vitals(Base, UUIDPKMixin):
     gcs_score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     flagged: Mapped[bool] = mapped_column(Boolean, default=False)
     flag_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)

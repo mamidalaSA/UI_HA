@@ -197,6 +197,7 @@ def record_vitals(db: Session, *, user: User, patient: Patient, payload: VitalsC
         resp_rate=payload.resp_rate,
         blood_glucose=payload.blood_glucose,
         gcs_score=payload.gcs_score,
+        notes=payload.notes,
     )
 
     out_of_range: list[str] = []

@@ -71,6 +71,7 @@ export default function ObservationPage() {
       header: "Status",
       render: (v) => (v.flagged ? <Badge tone="red">Flagged</Badge> : <Badge tone="green">Normal</Badge>),
     },
+    { header: "Notes", render: (v) => v.notes ?? "—" },
   ];
 
   const medLogColumns: Column<MedicationLog>[] = [

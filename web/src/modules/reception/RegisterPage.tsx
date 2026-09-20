@@ -1,13 +1,14 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Panel } from "@/components/Panel";
 import type {
   AdmissionType,
+  Doctor,
   Gender,
   IntakeChannel,
   PatientCreatePayload,
 } from "./api";
-import { createPatient } from "./api";
+import { createPatient, listDoctors } from "./api";
 import { ReceptionShell } from "./ReceptionShell";
 
 const inputClass =
@@ -31,6 +32,7 @@ interface FormState {
   medico_legal: boolean;
   fir_number: string;
   defer_payment: boolean;
+  doctor_id: string;
 }
 
 const initialState: FormState = {
@@ -50,6 +52,7 @@ const initialState: FormState = {
   medico_legal: false,
   fir_number: "",
   defer_payment: false,
+  doctor_id: "",
 };
 
 export default function RegisterPage() {
@@ -58,6 +61,13 @@ export default function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successLink, setSuccessLink] = useState<string | null>(null);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+
+  useEffect(() => {
+    listDoctors()
+      .then((rows) => setDoctors(rows.filter((d) => d.is_active)))
+      .catch(() => setDoctors([]));
+  }, []);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -94,6 +104,7 @@ export default function RegisterPage() {
       medico_legal: form.medico_legal,
       fir_number: form.medico_legal ? form.fir_number : null,
       defer_payment: form.intake_channel === "emergency" ? form.defer_payment : undefined,
+      doctor_id: form.doctor_id || null,
     };
 
     setSubmitting(true);
@@ -206,6 +217,25 @@ export default function RegisterPage() {
                   value={form.chief_complaint}
                   onChange={(e) => set("chief_complaint", e.target.value)}
                 />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className={labelClass}>Assign Doctor</label>
+                <select
+                  className={inputClass}
+                  value={form.doctor_id}
+                  onChange={(e) => set("doctor_id", e.target.value)}
+                >
+                  <option value="">Auto-assign based on chief complaint</option>
+                  {doctors.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.full_name} — {d.specialty}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-400">
+                  Leave as auto-assign to match by specialty, or pick a doctor directly.
+                </p>
               </div>
 
               <div className="flex items-center gap-2 sm:col-span-2">

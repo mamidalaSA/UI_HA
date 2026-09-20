@@ -30,6 +30,7 @@ export function VitalsForm({ patientId, onRecorded }: VitalsFormProps) {
     blood_glucose: "",
     gcs_score: "",
   });
+  const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Vitals | null>(null);
@@ -46,9 +47,10 @@ export function VitalsForm({ patientId, onRecorded }: VitalsFormProps) {
       const raw = values[field.key];
       payload[field.key] = raw.trim() === "" ? null : Number(raw);
     }
+    payload.notes = notes.trim() === "" ? null : notes.trim();
     const hasAnyValue = Object.values(payload).some((v) => v !== null);
     if (!hasAnyValue) {
-      setError("Enter at least one vital reading.");
+      setError("Enter at least one vital reading or an observation note.");
       return;
     }
 
@@ -67,6 +69,7 @@ export function VitalsForm({ patientId, onRecorded }: VitalsFormProps) {
         blood_glucose: "",
         gcs_score: "",
       });
+      setNotes("");
     } catch {
       setError("Could not save vitals. Please try again.");
     } finally {
@@ -91,6 +94,17 @@ export function VitalsForm({ patientId, onRecorded }: VitalsFormProps) {
             />
           </div>
         ))}
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-600">Observation notes</label>
+        <textarea
+          rows={3}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="e.g. Patient anxious, wound dressing looks clean, family present…"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-nurse-accent focus:outline-none focus:ring-1 focus:ring-nurse-accent"
+        />
       </div>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
