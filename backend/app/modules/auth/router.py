@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.rate_limit import login_rate_limit, otp_rate_limit
 from app.db.session import get_db
 from app.modules.auth import service
 from app.modules.auth.schemas import (
@@ -14,7 +15,7 @@ from app.modules.auth.schemas import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse, dependencies=[Depends(login_rate_limit)])
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     try:
         token, user = service.login(db, email=payload.email, password=payload.password)
@@ -23,13 +24,13 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     return TokenResponse(access_token=token, role=user.role, user_id=user.id, full_name=user.full_name)
 
 
-@router.post("/otp/send")
+@router.post("/otp/send", dependencies=[Depends(otp_rate_limit)])
 def send_otp(payload: OtpSendRequest, db: Session = Depends(get_db)):
     service.send_otp(db, mobile=payload.mobile, purpose=payload.purpose)
     return {"sent": True}
 
 
-@router.post("/otp/verify", response_model=OtpVerifyResponse)
+@router.post("/otp/verify", response_model=OtpVerifyResponse, dependencies=[Depends(otp_rate_limit)])
 def verify_otp(payload: OtpVerifyRequest, db: Session = Depends(get_db)):
     ok = service.verify_otp(db, mobile=payload.mobile, code=payload.code, purpose=payload.purpose)
     return OtpVerifyResponse(verified=ok)

@@ -33,12 +33,18 @@ class Settings(BaseSettings):
     push_provider: str = "mock"  # mock | fcm
     fcm_server_key: str = ""
 
-    otp_static_code: str = "123456"  # dev-only fixed OTP so flows are testable without real SMS
+    otp_static_code: str = ""  # if set, always issue this code instead of a random one (local-only convenience)
+
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     draft_expiry_hours: int = 48
     payment_link_expiry_hours: int = 2
     dose_fire_before_minutes: int = 15
     dose_expire_after_minutes: int = 30
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 settings = Settings()

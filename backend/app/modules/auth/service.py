@@ -1,3 +1,4 @@
+import secrets
 import uuid
 from datetime import timedelta
 
@@ -25,9 +26,10 @@ def login(db: Session, *, email: str, password: str) -> tuple[str, User]:
 
 
 def send_otp(db: Session, *, mobile: str, purpose: str) -> None:
-    # Dev mode: always issue the fixed settings.otp_static_code so flows are testable
-    # without a real SMS account. Swap for a random code once a real SmsProvider is wired.
-    code = settings.otp_static_code
+    # Random per-request code by default (readable via the mock provider's admin-gated
+    # outbox for testing). settings.otp_static_code overrides this for local convenience
+    # only — never set it when the API is reachable outside localhost.
+    code = settings.otp_static_code or f"{secrets.randbelow(1_000_000):06d}"
     otp = OtpCode(mobile=mobile, code=code, purpose=purpose, expires_at=utcnow() + timedelta(minutes=10))
     db.add(otp)
     db.commit()
