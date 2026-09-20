@@ -113,6 +113,29 @@ export async function createPatient(payload: PatientCreatePayload): Promise<Pati
   return data;
 }
 
+export interface PatientEditPayload {
+  full_name?: string;
+  date_of_birth?: string;
+  gender?: Gender;
+  id_number?: string;
+  blood_group?: string | null;
+  mobile?: string;
+  email?: string | null;
+  address?: string | null;
+  emergency_name?: string;
+  emergency_phone?: string;
+  admission_type?: AdmissionType;
+  chief_complaint?: string;
+  medico_legal?: boolean;
+  fir_number?: string | null;
+  doctor_id?: string | null;
+}
+
+export async function updatePatient(id: string, payload: PatientEditPayload): Promise<Patient> {
+  const { data } = await apiClient.patch<Patient>(`/api/patients/${id}`, payload);
+  return data;
+}
+
 export async function activatePatient(id: string, otp_code: string): Promise<Patient> {
   const { data } = await apiClient.patch<Patient>(`/api/patients/${id}/activate`, { otp_code });
   return data;

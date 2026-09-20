@@ -21,6 +21,7 @@ from app.modules.patients.schemas import (
     PatientCreate,
     PatientListOut,
     PatientOut,
+    PatientUpdate,
     PaymentInitiateRequest,
     PaymentOfflineRequest,
 )
@@ -81,6 +82,24 @@ def list_patients(
 
 @router.get("/patients/{patient_id}", response_model=PatientOut)
 def get_patient(patient: Patient = Depends(_get_patient_for_view)):
+    return patient
+
+
+@router.patch("/patients/{patient_id}", response_model=PatientOut)
+def update_patient(
+    patient_id: uuid.UUID,
+    payload: PatientUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(reception_role),
+):
+    patient = _get_patient_or_404(db, patient_id)
+    try:
+        service.update_patient(db, patient, payload, current_user=user)
+    except service.PatientError as exc:
+        db.rollback()
+        _raise(exc)
+    db.commit()
+    db.refresh(patient)
     return patient
 
 

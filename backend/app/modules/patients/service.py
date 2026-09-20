@@ -420,6 +420,51 @@ def activate_patient(
     return patient
 
 
+def _json_safe(value):
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if hasattr(value, "value"):  # enum
+        return value.value
+    if isinstance(value, (datetime, type(_utcnow().date()))):
+        return value.isoformat()
+    return value
+
+
+def update_patient(db: Session, patient: Patient, updates: PatientUpdate, *, current_user: User) -> Patient:
+    """General-purpose edit of an already-registered patient's details (receptionist/
+    admin), independent of the draft/pending -> active flow /confirm handles. Blocked
+    once the profile is discharged or expired — those records are final."""
+    if patient.profile_status in (ProfileStatus.discharged, ProfileStatus.expired):
+        raise PatientError(f"Cannot edit a {patient.profile_status.value} patient's details", 409)
+
+    data = updates.model_dump(exclude_unset=True)
+    if not data:
+        return patient
+
+    old_value = {field: _json_safe(getattr(patient, field)) for field in data if hasattr(patient, field)}
+
+    old_mobile = patient.mobile
+    doctor_override = apply_patient_update(patient, updates)
+    if doctor_override and ("department_id" not in data or "consult_fee" not in data):
+        # Same derivation as registration-time override: filling in department/fee
+        # from the doctor unless the caller supplied its own values for those.
+        _assign_doctor_manually(db, patient, patient.doctor_id)
+
+    if "mobile" in data and data["mobile"] != old_mobile:
+        patient.mobile_verified = False
+
+    record_audit(
+        db,
+        user_id=current_user.id,
+        action="update",
+        entity="patients",
+        entity_id=patient.id,
+        old_value=old_value,
+        new_value={field: _json_safe(getattr(patient, field)) for field in data if hasattr(patient, field)},
+    )
+    return patient
+
+
 def confirm_patient(
     db: Session,
     patient: Patient,

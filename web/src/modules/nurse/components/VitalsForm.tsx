@@ -6,7 +6,7 @@ interface VitalsFormProps {
   onRecorded: (vitals: Vitals) => void;
 }
 
-type FieldKey = keyof VitalsCreatePayload;
+type FieldKey = Exclude<keyof VitalsCreatePayload, "notes">;
 
 const FIELDS: { key: FieldKey; label: string; unit: string; step: string }[] = [
   { key: "temperature_c", label: "Temperature", unit: "°C", step: "0.1" },
