@@ -9,7 +9,7 @@ import {
   YAxis,
 } from "recharts";
 import { Badge } from "@/components/Badge";
-import { IconBed, IconClipboard, IconHeart, IconUser, IconUsers } from "@/components/icons";
+import { IconBed, IconChart, IconClipboard, IconHeart, IconUser, IconUsers } from "@/components/icons";
 import { Panel } from "@/components/Panel";
 import { StatCard } from "@/components/StatCard";
 import { DataTable, type Column } from "@/components/DataTable";
@@ -242,6 +242,75 @@ export default function DashboardPage() {
 
       <Panel title="Recent Admissions">
         <DataTable columns={admissionColumns} rows={recentAdmissions} keyFor={(p) => p.id} emptyMessage="No admissions yet" />
+      </Panel>
+
+      <Panel title="Billing">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <StatCard
+            icon={<IconChart className="h-6 w-6 text-emerald-600" />}
+            iconBg="bg-emerald-100"
+            label="Bills Paid"
+            value={
+              loading
+                ? "…"
+                : `${(summary?.consult_billing.paid_count ?? 0) + (summary?.pharmacy_billing.paid_count ?? 0)} — ₹${(
+                    (summary?.consult_billing.paid_amount ?? 0) + (summary?.pharmacy_billing.paid_amount ?? 0)
+                  ).toFixed(2)}`
+            }
+          />
+          <StatCard
+            icon={<IconChart className="h-6 w-6 text-amber-600" />}
+            iconBg="bg-amber-100"
+            label="Bills Pending"
+            value={
+              loading
+                ? "…"
+                : `${(summary?.consult_billing.pending_count ?? 0) + (summary?.pharmacy_billing.pending_count ?? 0)} — ₹${(
+                    (summary?.consult_billing.pending_amount ?? 0) + (summary?.pharmacy_billing.pending_amount ?? 0)
+                  ).toFixed(2)}`
+            }
+          />
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[480px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <th className="px-3 py-2.5">Stream</th>
+                <th className="px-3 py-2.5">Paid</th>
+                <th className="px-3 py-2.5">Pending</th>
+                <th className="px-3 py-2.5">Waived</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(
+                [
+                  { label: "Consult fees (reception)", data: summary?.consult_billing },
+                  { label: "Pharmacy", data: summary?.pharmacy_billing },
+                ] as const
+              ).map((row) => (
+                <tr key={row.label} className="border-b border-slate-100 last:border-0">
+                  <td className="px-3 py-3 font-medium text-slate-700">{row.label}</td>
+                  <td className="px-3 py-3">
+                    <Badge tone="green">{row.data?.paid_count ?? 0}</Badge>{" "}
+                    <span className="text-slate-500">₹{(row.data?.paid_amount ?? 0).toFixed(2)}</span>
+                  </td>
+                  <td className="px-3 py-3">
+                    <Badge tone="amber">{row.data?.pending_count ?? 0}</Badge>{" "}
+                    <span className="text-slate-500">₹{(row.data?.pending_amount ?? 0).toFixed(2)}</span>
+                  </td>
+                  <td className="px-3 py-3">
+                    <Badge tone="blue">{row.data?.waived_count ?? 0}</Badge>{" "}
+                    <span className="text-slate-500">₹{(row.data?.waived_amount ?? 0).toFixed(2)}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-xs text-slate-400">
+          Consult fees and pharmacy charges are billed separately — "Pending" for consult fees includes link-sent and
+          deferred payments still owed.
+        </p>
       </Panel>
     </div>
   );

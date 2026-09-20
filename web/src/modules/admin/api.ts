@@ -408,6 +408,15 @@ export interface GenderBreakdownItem {
   count: number;
 }
 
+export interface BillingSummary {
+  paid_count: number;
+  paid_amount: number;
+  pending_count: number;
+  pending_amount: number;
+  waived_count: number;
+  waived_amount: number;
+}
+
 export interface ReportsSummary {
   total_patients: number;
   admitted_patients: number;
@@ -416,10 +425,73 @@ export interface ReportsSummary {
   total_nurses: number;
   by_department: DepartmentBreakdownItem[];
   by_gender: GenderBreakdownItem[];
+  consult_billing: BillingSummary;
+  pharmacy_billing: BillingSummary;
 }
 
 export async function getReportsSummary(): Promise<ReportsSummary> {
   const { data } = await apiClient.get("/api/admin/reports/summary");
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Patient bills
+// ---------------------------------------------------------------------------
+
+export interface PatientBill {
+  patient_id: string;
+  patient_name: string;
+  mobile: string;
+  consult_fee: number | null;
+  consult_payment_status: PaymentStatus;
+  pharmacy_paid_amount: number;
+  pharmacy_pending_amount: number;
+  pharmacy_entries: number;
+  total_paid: number;
+  total_pending: number;
+}
+
+export async function listPatientBills(): Promise<PatientBill[]> {
+  const { data } = await apiClient.get<PatientBill[]>("/api/admin/patient-bills");
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Staff salaries
+// ---------------------------------------------------------------------------
+
+export type SalaryStatus = "pending" | "paid";
+
+export interface StaffSalaryRow {
+  user_id: string;
+  full_name: string;
+  email: string;
+  role: Role;
+  salary_id: string | null;
+  period: string;
+  amount: number | null;
+  status: SalaryStatus | null;
+  paid_at: string | null;
+  notes: string | null;
+}
+
+export async function listSalaries(period: string): Promise<StaffSalaryRow[]> {
+  const { data } = await apiClient.get<StaffSalaryRow[]>("/api/admin/salaries", { params: { period } });
+  return data;
+}
+
+export async function upsertSalary(payload: {
+  user_id: string;
+  period: string;
+  amount: number;
+  notes?: string | null;
+}): Promise<StaffSalaryRow> {
+  const { data } = await apiClient.put<StaffSalaryRow>("/api/admin/salaries", payload);
+  return data;
+}
+
+export async function paySalary(salaryId: string): Promise<StaffSalaryRow> {
+  const { data } = await apiClient.patch<StaffSalaryRow>(`/api/admin/salaries/${salaryId}/pay`);
   return data;
 }
 

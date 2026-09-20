@@ -4,6 +4,8 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.core.roles import Role
+from app.modules.admin.models import SalaryStatus
+from app.modules.patients.models import PaymentStatus
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +302,17 @@ class GenderBreakdownItem(BaseModel):
     count: int
 
 
+class BillingSummaryOut(BaseModel):
+    """Paid vs. outstanding, for one billing stream (consult fees or pharmacy)."""
+
+    paid_count: int
+    paid_amount: float
+    pending_count: int
+    pending_amount: float
+    waived_count: int
+    waived_amount: float
+
+
 class ReportsSummaryOut(BaseModel):
     total_patients: int
     admitted_patients: int
@@ -308,3 +321,52 @@ class ReportsSummaryOut(BaseModel):
     total_nurses: int
     by_department: list[DepartmentBreakdownItem]
     by_gender: list[GenderBreakdownItem]
+    consult_billing: BillingSummaryOut
+    pharmacy_billing: BillingSummaryOut
+
+
+# ---------------------------------------------------------------------------
+# Patient bills (per-patient payment history across both billing streams)
+# ---------------------------------------------------------------------------
+
+
+class PatientBillOut(BaseModel):
+    patient_id: uuid.UUID
+    patient_name: str
+    mobile: str
+    consult_fee: float | None
+    consult_payment_status: PaymentStatus
+    pharmacy_paid_amount: float
+    pharmacy_pending_amount: float
+    pharmacy_entries: int
+    total_paid: float
+    total_pending: float
+
+
+# ---------------------------------------------------------------------------
+# Staff salaries
+# ---------------------------------------------------------------------------
+
+
+class StaffSalaryUpsert(BaseModel):
+    user_id: uuid.UUID
+    period: str = Field(pattern=r"^\d{4}-\d{2}$", description='"YYYY-MM"')
+    amount: float = Field(gt=0)
+    notes: str | None = None
+
+
+class StaffSalaryRowOut(BaseModel):
+    """One staff member's salary status for the requested period — present even
+    when no salary record exists yet for that period (amount/status/salary_id are
+    null in that case, so the UI can offer to set one)."""
+
+    user_id: uuid.UUID
+    full_name: str
+    email: str
+    role: Role
+    salary_id: uuid.UUID | None
+    period: str
+    amount: float | None
+    status: SalaryStatus | None
+    paid_at: datetime | None
+    notes: str | None

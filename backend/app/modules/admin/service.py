@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.core.audit import record_audit
@@ -13,7 +14,9 @@ from app.modules.admin.models import (
     DepartmentFee,
     DepartmentSpecialty,
     MedicineFormulary,
+    SalaryStatus,
     SpecialtyMapping,
+    StaffSalary,
     TestCatalogue,
     VitalsConfig,
 )
@@ -27,6 +30,7 @@ from app.modules.admin.schemas import (
     MedicineFormularyCreate,
     MedicineFormularyUpdate,
     SpecialtyMappingCreate,
+    StaffSalaryUpsert,
     TestCatalogueCreate,
     TestCatalogueUpdate,
     UserCreate,
@@ -35,7 +39,8 @@ from app.modules.admin.schemas import (
 )
 from app.modules.auth.models import User
 from app.modules.doctors.models import Doctor, DoctorRoster
-from app.modules.patients.models import AdmissionType, Patient, ProfileStatus
+from app.modules.patients.models import AdmissionType, PaymentStatus, Patient, ProfileStatus
+from app.modules.pharmacy.models import BillingEntry, BillingPaymentStatus
 
 
 class AdminServiceError(Exception):
@@ -702,6 +707,47 @@ def reports_summary(db: Session) -> dict:
     gender_rows = db.execute(select(Patient.gender, func.count()).group_by(Patient.gender)).all()
     by_gender = [{"gender": gender.value, "count": count} for gender, count in gender_rows]
 
+    # Consult-fee billing (patients.payment_status). "Pending" groups every status that
+    # still represents money owed but not yet collected — link_sent and deferred included,
+    # since both are outstanding from the hospital's point of view, just at different stages.
+    consult_rows = db.execute(
+        select(Patient.payment_status, func.count(), func.coalesce(func.sum(Patient.consult_fee), 0))
+        .where(Patient.consult_fee.is_not(None))
+        .group_by(Patient.payment_status)
+    ).all()
+    consult_billing = {"paid_count": 0, "paid_amount": 0.0, "pending_count": 0, "pending_amount": 0.0, "waived_count": 0, "waived_amount": 0.0}
+    for pay_status, count, total in consult_rows:
+        amount = float(total)
+        if pay_status == PaymentStatus.paid:
+            consult_billing["paid_count"] += count
+            consult_billing["paid_amount"] += amount
+        elif pay_status == PaymentStatus.waived:
+            consult_billing["waived_count"] += count
+            consult_billing["waived_amount"] += amount
+        else:  # pending, link_sent, deferred
+            consult_billing["pending_count"] += count
+            consult_billing["pending_amount"] += amount
+
+    # Pharmacy billing (billing_entries.payment_status) — a separate stream from consult
+    # fees, collected at the pharmacy counter (see BillingEntry).
+    pharmacy_rows = db.execute(
+        select(BillingEntry.payment_status, func.count(), func.coalesce(func.sum(BillingEntry.amount), 0)).group_by(
+            BillingEntry.payment_status
+        )
+    ).all()
+    pharmacy_billing = {"paid_count": 0, "paid_amount": 0.0, "pending_count": 0, "pending_amount": 0.0, "waived_count": 0, "waived_amount": 0.0}
+    for pay_status, count, total in pharmacy_rows:
+        amount = float(total)
+        if pay_status == BillingPaymentStatus.paid:
+            pharmacy_billing["paid_count"] += count
+            pharmacy_billing["paid_amount"] += amount
+        elif pay_status == BillingPaymentStatus.waived:
+            pharmacy_billing["waived_count"] += count
+            pharmacy_billing["waived_amount"] += amount
+        else:  # pending
+            pharmacy_billing["pending_count"] += count
+            pharmacy_billing["pending_amount"] += amount
+
     return {
         "total_patients": int(total_patients),
         "admitted_patients": int(admitted_patients),
@@ -710,4 +756,167 @@ def reports_summary(db: Session) -> dict:
         "total_nurses": int(total_nurses),
         "by_department": by_department,
         "by_gender": by_gender,
+        "consult_billing": consult_billing,
+        "pharmacy_billing": pharmacy_billing,
     }
+
+
+# ---------------------------------------------------------------------------
+# Patient bills (per-patient payment history across both billing streams)
+# ---------------------------------------------------------------------------
+
+
+def list_patient_bills(db: Session) -> list[dict]:
+    pharmacy_agg = (
+        select(
+            BillingEntry.patient_id.label("patient_id"),
+            func.sum(
+                case((BillingEntry.payment_status == BillingPaymentStatus.paid, BillingEntry.amount), else_=0)
+            ).label("paid"),
+            func.sum(
+                case((BillingEntry.payment_status == BillingPaymentStatus.pending, BillingEntry.amount), else_=0)
+            ).label("pending"),
+            func.count(BillingEntry.id).label("entries"),
+        )
+        .group_by(BillingEntry.patient_id)
+        .subquery()
+    )
+
+    rows = db.execute(
+        select(Patient, pharmacy_agg.c.paid, pharmacy_agg.c.pending, pharmacy_agg.c.entries)
+        .outerjoin(pharmacy_agg, pharmacy_agg.c.patient_id == Patient.id)
+        .order_by(Patient.created_at.desc())
+    ).all()
+
+    result: list[dict] = []
+    for patient, ph_paid, ph_pending, ph_entries in rows:
+        consult_fee = float(patient.consult_fee) if patient.consult_fee is not None else None
+        consult_paid = consult_fee if (consult_fee is not None and patient.payment_status == PaymentStatus.paid) else 0.0
+        consult_pending = (
+            consult_fee
+            if (consult_fee is not None and patient.payment_status in (PaymentStatus.pending, PaymentStatus.link_sent, PaymentStatus.deferred))
+            else 0.0
+        )
+        pharmacy_paid = float(ph_paid or 0)
+        pharmacy_pending = float(ph_pending or 0)
+        result.append(
+            {
+                "patient_id": patient.id,
+                "patient_name": patient.full_name,
+                "mobile": patient.mobile,
+                "consult_fee": consult_fee,
+                "consult_payment_status": patient.payment_status,
+                "pharmacy_paid_amount": pharmacy_paid,
+                "pharmacy_pending_amount": pharmacy_pending,
+                "pharmacy_entries": int(ph_entries or 0),
+                "total_paid": consult_paid + pharmacy_paid,
+                "total_pending": consult_pending + pharmacy_pending,
+            }
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Staff salaries
+# ---------------------------------------------------------------------------
+
+
+def list_staff_salaries(db: Session, *, period: str) -> list[dict]:
+    """Every non-patient user, left-joined with their salary record for `period` —
+    staff with no record yet still appear, with amount/status/salary_id null, so the
+    admin UI can offer to set one instead of just omitting them."""
+    rows = db.execute(
+        select(User, StaffSalary)
+        .outerjoin(StaffSalary, (StaffSalary.user_id == User.id) & (StaffSalary.period == period))
+        .where(User.role != Role.patient)
+        .order_by(User.role, User.full_name)
+    ).all()
+
+    return [
+        {
+            "user_id": user.id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "role": user.role,
+            "salary_id": salary.id if salary else None,
+            "period": period,
+            "amount": float(salary.amount) if salary else None,
+            "status": salary.status if salary else None,
+            "paid_at": salary.paid_at if salary else None,
+            "notes": salary.notes if salary else None,
+        }
+        for user, salary in rows
+    ]
+
+
+def upsert_staff_salary(db: Session, *, payload: StaffSalaryUpsert, actor: User) -> StaffSalary:
+    user = db.get(User, payload.user_id)
+    if user is None or user.role == Role.patient:
+        raise AdminServiceError("Staff user not found")
+
+    existing = db.execute(
+        select(StaffSalary).where(StaffSalary.user_id == payload.user_id, StaffSalary.period == payload.period)
+    ).scalar_one_or_none()
+
+    if existing is not None:
+        if existing.status == SalaryStatus.paid:
+            raise AdminServiceError("This period's salary has already been paid — cannot edit the amount")
+        old_value = {"amount": float(existing.amount)}
+        existing.amount = payload.amount
+        existing.notes = payload.notes
+        record_audit(
+            db,
+            user_id=actor.id,
+            action="update",
+            entity="staff_salaries",
+            entity_id=existing.id,
+            old_value=old_value,
+            new_value={"amount": payload.amount},
+        )
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    salary = StaffSalary(
+        user_id=payload.user_id,
+        period=payload.period,
+        amount=payload.amount,
+        notes=payload.notes,
+    )
+    db.add(salary)
+    db.flush()
+    record_audit(
+        db,
+        user_id=actor.id,
+        action="create",
+        entity="staff_salaries",
+        entity_id=salary.id,
+        new_value={"user_id": str(payload.user_id), "period": payload.period, "amount": payload.amount},
+    )
+    db.commit()
+    db.refresh(salary)
+    return salary
+
+
+def mark_salary_paid(db: Session, *, salary_id: uuid.UUID, actor: User) -> StaffSalary:
+    salary = db.get(StaffSalary, salary_id)
+    if salary is None:
+        raise AdminServiceError("Salary record not found")
+    if salary.status == SalaryStatus.paid:
+        raise AdminServiceError("This salary has already been marked paid")
+
+    salary.status = SalaryStatus.paid
+    salary.paid_at = datetime.now(timezone.utc)
+    salary.paid_by = actor.id
+
+    record_audit(
+        db,
+        user_id=actor.id,
+        action="pay",
+        entity="staff_salaries",
+        entity_id=salary.id,
+        new_value={"status": "paid", "amount": float(salary.amount)},
+    )
+    db.commit()
+    db.refresh(salary)
+    return salary

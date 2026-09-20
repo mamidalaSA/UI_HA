@@ -1,8 +1,9 @@
+import enum
 import uuid
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DECIMAL, Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, DECIMAL, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -79,6 +80,33 @@ class AlertWindowConfig(Base, UUIDPKMixin, TimestampMixin):
 
     fire_before_minutes: Mapped[int] = mapped_column(Integer, default=15)
     expire_after_minutes: Mapped[int] = mapped_column(Integer, default=30)
+
+
+class SalaryStatus(str, enum.Enum):
+    pending = "pending"
+    paid = "paid"
+
+
+class StaffSalary(Base, UUIDPKMixin):
+    """One staff member's salary for one calendar month (period = "YYYY-MM").
+    Admin sets the amount, then marks it paid once disbursed — separate ledger from
+    patient billing (consult fees / pharmacy), tracking money the hospital pays out
+    rather than collects."""
+
+    __tablename__ = "staff_salaries"
+    __table_args__ = (UniqueConstraint("user_id", "period", name="uq_staff_salary_user_period"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), index=True)
+    period: Mapped[str] = mapped_column(String(7))  # "YYYY-MM"
+    amount: Mapped[float] = mapped_column(DECIMAL(10, 2))
+    status: Mapped[SalaryStatus] = mapped_column(
+        Enum(SalaryStatus, name="salary_status"), default=SalaryStatus.pending, index=True
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class AuditLog(Base, UUIDPKMixin):

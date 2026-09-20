@@ -26,9 +26,12 @@ from app.modules.admin.schemas import (
     MedicineFormularyCreate,
     MedicineFormularyOut,
     MedicineFormularyUpdate,
+    PatientBillOut,
     ReportsSummaryOut,
     SpecialtyMappingCreate,
     SpecialtyMappingOut,
+    StaffSalaryRowOut,
+    StaffSalaryUpsert,
     TestCatalogueCreate,
     TestCatalogueOut,
     TestCatalogueUpdate,
@@ -358,3 +361,77 @@ def get_push_outbox(actor: User = Depends(require_role(Role.admin))):
 @router.get("/reports/summary", response_model=ReportsSummaryOut)
 def reports_summary(db: Session = Depends(get_db), actor: User = Depends(require_role(Role.admin))):
     return service.reports_summary(db)
+
+
+# ---------------------------------------------------------------------------
+# Patient bills
+# ---------------------------------------------------------------------------
+
+
+@router.get("/patient-bills", response_model=list[PatientBillOut])
+def patient_bills(db: Session = Depends(get_db), actor: User = Depends(require_role(Role.admin))):
+    return service.list_patient_bills(db)
+
+
+# ---------------------------------------------------------------------------
+# Staff salaries
+# ---------------------------------------------------------------------------
+
+
+@router.get("/salaries", response_model=list[StaffSalaryRowOut])
+def list_salaries(
+    period: str = Query(..., pattern=r"^\d{4}-\d{2}$", description='"YYYY-MM"'),
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_role(Role.admin)),
+):
+    return service.list_staff_salaries(db, period=period)
+
+
+@router.put("/salaries", response_model=StaffSalaryRowOut)
+def upsert_salary(
+    payload: StaffSalaryUpsert,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_role(Role.admin)),
+):
+    try:
+        salary = service.upsert_staff_salary(db, payload=payload, actor=actor)
+    except service.AdminServiceError as exc:
+        _raise_service_error(exc)
+    user = db.get(User, salary.user_id)
+    return StaffSalaryRowOut(
+        user_id=salary.user_id,
+        full_name=user.full_name,
+        email=user.email,
+        role=user.role,
+        salary_id=salary.id,
+        period=salary.period,
+        amount=float(salary.amount),
+        status=salary.status,
+        paid_at=salary.paid_at,
+        notes=salary.notes,
+    )
+
+
+@router.patch("/salaries/{salary_id}/pay", response_model=StaffSalaryRowOut)
+def pay_salary(
+    salary_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_role(Role.admin)),
+):
+    try:
+        salary = service.mark_salary_paid(db, salary_id=salary_id, actor=actor)
+    except service.AdminServiceError as exc:
+        _raise_service_error(exc)
+    user = db.get(User, salary.user_id)
+    return StaffSalaryRowOut(
+        user_id=salary.user_id,
+        full_name=user.full_name,
+        email=user.email,
+        role=user.role,
+        salary_id=salary.id,
+        period=salary.period,
+        amount=float(salary.amount),
+        status=salary.status,
+        paid_at=salary.paid_at,
+        notes=salary.notes,
+    )

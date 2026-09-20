@@ -28,6 +28,7 @@ import MedicineFormularyPage from "./pages/MedicineFormularyPage";
 import NurseManagementPage from "./pages/NurseManagementPage";
 import PatientManagementPage from "./pages/PatientManagementPage";
 import { SpecialtyMappingWithDepartments } from "./pages/SpecialtyMappingPage";
+import StaffSalariesPage from "./pages/StaffSalariesPage";
 import SystemSettingsPage from "./pages/SystemSettingsPage";
 import TestCataloguePage from "./pages/TestCataloguePage";
 import VitalsConfigPage from "./pages/VitalsConfigPage";
@@ -35,6 +36,7 @@ import VitalsConfigPage from "./pages/VitalsConfigPage";
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", to: "/admin", icon: IconHome, end: true },
   { label: "Patient Management", to: "/admin/patients", icon: IconUsers },
+  { label: "Staff Salaries", to: "/admin/salaries", icon: IconClipboard },
   { label: "Doctor Management", to: "/admin/doctors", icon: IconUser },
   { label: "Nurse Management", to: "/admin/nurses", icon: IconHeart },
   { label: "Department Management", to: "/admin/departments", icon: IconMapPin },
@@ -50,6 +52,7 @@ const NAV_ITEMS: NavItem[] = [
 const PAGE_TITLES: Record<string, string> = {
   "/admin": "Dashboard",
   "/admin/patients": "Patient Management",
+  "/admin/salaries": "Staff Salaries",
   "/admin/doctors": "Doctor Management",
   "/admin/nurses": "Nurse Management",
   "/admin/departments": "Department Management",
@@ -132,6 +135,7 @@ export default function AdminApp() {
       <Route element={<AdminLayout />}>
         <Route index element={<DashboardPage />} />
         <Route path="patients" element={<PatientManagementPage />} />
+        <Route path="salaries" element={<StaffSalariesPage />} />
         <Route path="doctors" element={<DoctorManagementPage />} />
         <Route path="nurses" element={<NurseManagementPage />} />
         <Route path="departments" element={<DepartmentManagementPage />} />
