@@ -9,7 +9,7 @@ from app.core.notify import doctor_user, notify_user
 from app.db.mixins import utcnow
 from app.integrations.storage import presigned_url, upload_file
 from app.modules.admin.models import TestCatalogue
-from app.modules.labs.models import TestOrder, TestOrderStatus
+from app.modules.labs.models import LabPaymentStatus, TestOrder, TestOrderStatus
 from app.modules.labs.schemas import TestHistoryOut, TestQueueOut
 from app.modules.patients.models import Patient
 
@@ -43,6 +43,8 @@ def get_queue(db: Session) -> list[TestQueueOut]:
             status=order.status,
             ordered_at=order.ordered_at,
             notes=order.notes,
+            amount=float(order.amount),
+            payment_status=order.payment_status,
         )
         for order, patient_name, test_name, category in rows
     ]
@@ -156,6 +158,32 @@ def get_patient_tests(db: Session, *, patient_id: uuid.UUID) -> list[TestHistory
                 completed_at=order.completed_at,
                 reviewed_at=order.reviewed_at,
                 notes=order.notes,
+                amount=float(order.amount),
+                payment_status=order.payment_status,
+                receipt_number=order.receipt_number,
             )
         )
     return out
+
+
+def collect_payment(db: Session, *, order_id: uuid.UUID, receipt_number: str, user_id: uuid.UUID) -> TestOrder:
+    order = _get_order_or_404(db, order_id)
+    if order.payment_status == LabPaymentStatus.paid:
+        raise LabError("This test's payment has already been collected")
+
+    order.payment_status = LabPaymentStatus.paid
+    order.paid_at = utcnow()
+    order.collected_by = user_id
+    order.receipt_number = receipt_number
+
+    record_audit(
+        db,
+        user_id=user_id,
+        action="collect_payment",
+        entity="test_order",
+        entity_id=order.id,
+        new_value={"receipt_number": receipt_number, "amount": float(order.amount)},
+    )
+    db.commit()
+    db.refresh(order)
+    return order

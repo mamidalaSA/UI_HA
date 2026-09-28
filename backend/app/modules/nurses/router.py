@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_role
-from app.core.ownership import require_own_patient_as_nurse
+from app.core.ownership import require_own_patient_as_nurse, require_patient_view_access
 from app.core.roles import Role
 from app.db.session import get_db
 from app.modules.auth.models import User
@@ -13,6 +13,7 @@ from app.modules.nurses.schemas import (
     AlertAcknowledgeOut,
     EscalationCreate,
     EscalationOut,
+    ICUKeysheetPatientOut,
     MedicationLogCreate,
     MedicationLogOut,
     NurseAlertOut,
@@ -79,10 +80,21 @@ def record_vitals(
 
 @router.get("/patients/{patient_id}/vitals", response_model=list[VitalsOut])
 def get_vitals(
-    patient: Patient = Depends(require_own_patient_as_nurse),
+    patient: Patient = Depends(require_patient_view_access),
     db: Session = Depends(get_db),
 ):
     return service.list_vitals(db, patient=patient)
+
+
+@router.get("/icu-keysheet", response_model=list[ICUKeysheetPatientOut])
+def get_icu_keysheet(
+    user: User = Depends(require_role(Role.head_nurse, Role.doctor, Role.admin)),
+    db: Session = Depends(get_db),
+):
+    try:
+        return service.list_icu_keysheet(db, user=user)
+    except service.NurseServiceError as exc:
+        _raise_for(exc)
 
 
 @router.get("/patients/{patient_id}/medication-log", response_model=list[MedicationLogOut])

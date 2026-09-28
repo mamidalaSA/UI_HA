@@ -13,7 +13,7 @@ import {
   type TestCatalogueEntry,
 } from "../api";
 
-const EMPTY_FORM = { name: "", department_id: "", category: "", tat_min_hours: "", tat_max_hours: "" };
+const EMPTY_FORM = { name: "", department_id: "", category: "", tat_min_hours: "", tat_max_hours: "", price: "" };
 
 export default function TestCataloguePage() {
   const [entries, setEntries] = useState<TestCatalogueEntry[]>([]);
@@ -61,6 +61,7 @@ export default function TestCataloguePage() {
       category: entry.category,
       tat_min_hours: String(entry.tat_min_hours),
       tat_max_hours: String(entry.tat_max_hours),
+      price: String(entry.price),
     });
     setFormError(null);
     setModalOpen(true);
@@ -71,12 +72,17 @@ export default function TestCataloguePage() {
     setFormError(null);
     const tatMin = Number(form.tat_min_hours);
     const tatMax = Number(form.tat_max_hours);
+    const price = form.price === "" ? 0 : Number(form.price);
     if (!form.department_id) {
       setFormError("Department is required");
       return;
     }
     if (Number.isNaN(tatMin) || Number.isNaN(tatMax) || tatMin <= 0 || tatMax <= 0) {
       setFormError("TAT hours must be positive numbers");
+      return;
+    }
+    if (Number.isNaN(price) || price < 0) {
+      setFormError("Price must be a non-negative number");
       return;
     }
     setSubmitting(true);
@@ -87,6 +93,7 @@ export default function TestCataloguePage() {
         category: form.category,
         tat_min_hours: tatMin,
         tat_max_hours: tatMax,
+        price,
       };
       if (editing) {
         await updateTestCatalogueEntry(editing.id, payload);
@@ -107,6 +114,7 @@ export default function TestCataloguePage() {
     { header: "Department", render: (t) => departmentNameById.get(t.department_id) ?? "—" },
     { header: "Category", render: (t) => t.category },
     { header: "TAT (hours)", render: (t) => `${t.tat_min_hours} – ${t.tat_max_hours}` },
+    { header: "Price", render: (t) => `₹${t.price.toFixed(2)}` },
     {
       header: "Actions",
       render: (t) => (
@@ -185,6 +193,17 @@ export default function TestCataloguePage() {
               />
             </Field>
           </div>
+          <Field label="Price (₹)">
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={form.price}
+              onChange={(e) => setForm({ ...form, price: e.target.value })}
+              placeholder="0.00"
+              className={inputClass}
+            />
+          </Field>
           {formError && <p className="text-sm text-red-600">{formError}</p>}
           <div className="mt-2 flex justify-end gap-2">
             <button type="button" onClick={() => setModalOpen(false)} className="rounded-lg px-4 py-2 text-sm text-slate-600">

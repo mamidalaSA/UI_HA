@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import DECIMAL, DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,12 @@ class TestOrderStatus(str, enum.Enum):
     completed = "completed"
     reviewed = "reviewed"
     cancelled = "cancelled"
+
+
+class LabPaymentStatus(str, enum.Enum):
+    pending = "pending"
+    paid = "paid"
+    waived = "waived"
 
 
 class TestOrder(Base, UUIDPKMixin):
@@ -33,3 +39,14 @@ class TestOrder(Base, UUIDPKMixin):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Billing: amount is stamped from TestCatalogue.price when the order is created
+    # (doctors.service.create_test_order), same pattern as pharmacy's dispense-time
+    # BillingEntry.amount snapshot.
+    amount: Mapped[float] = mapped_column(DECIMAL(10, 2), default=0)
+    payment_status: Mapped[LabPaymentStatus] = mapped_column(
+        Enum(LabPaymentStatus, name="lab_payment_status"), default=LabPaymentStatus.pending, index=True
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    collected_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    receipt_number: Mapped[str | None] = mapped_column(String(60), nullable=True)

@@ -28,6 +28,11 @@ interface AppShellProps {
   headerRight?: ReactNode;
   notificationCount?: number;
   messageCount?: number;
+  /** Optional content rendered in normal document flow at the bottom of the
+   * sidebar, above Logout — e.g. a status widget. Sits in the flex column
+   * itself (not a fixed overlay), so it can never overlap the nav list
+   * regardless of how many nav items there are or whether it scrolls. */
+  sidebarFooter?: ReactNode;
   children: ReactNode;
 }
 
@@ -41,6 +46,7 @@ export function AppShell({
   headerRight,
   notificationCount = 0,
   messageCount = 0,
+  sidebarFooter,
   children,
 }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -93,6 +99,8 @@ export function AppShell({
             </NavLink>
           ))}
         </nav>
+
+        {sidebarFooter && !collapsed && <div className="mx-3 mb-3 shrink-0">{sidebarFooter}</div>}
 
         <button
           onClick={() => {

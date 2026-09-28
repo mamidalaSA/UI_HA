@@ -8,7 +8,7 @@ export type Role =
   | "patient";
 
 export const ROLE_HOME: Record<Role, string> = {
-  admin: "/admin",
+  admin: "/admin/home",
   receptionist: "/reception",
   doctor: "/doctor",
   head_nurse: "/nurse",

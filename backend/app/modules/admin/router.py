@@ -1,6 +1,8 @@
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_role
@@ -8,7 +10,7 @@ from app.core.roles import Role
 from app.db.session import get_db
 from app.integrations.push import MockPushProvider
 from app.integrations.sms import MockSmsProvider
-from app.modules.admin import service
+from app.modules.admin import export, service
 from app.modules.admin.schemas import (
     AlertWindowConfigOut,
     AlertWindowConfigUpsert,
@@ -23,6 +25,7 @@ from app.modules.admin.schemas import (
     DoctorOut,
     DoctorRosterOut,
     DoctorRosterUpsert,
+    DoctorStatsOut,
     MedicineFormularyCreate,
     MedicineFormularyOut,
     MedicineFormularyUpdate,
@@ -93,6 +96,11 @@ def update_user(
 @router.get("/doctors", response_model=list[DoctorOut])
 def list_doctors(db: Session = Depends(get_db)):
     return service.list_doctors(db)
+
+
+@router.get("/doctors/stats", response_model=list[DoctorStatsOut])
+def doctor_stats(db: Session = Depends(get_db), actor: User = Depends(require_role(Role.admin))):
+    return service.list_doctor_stats(db)
 
 
 # ---------------------------------------------------------------------------
@@ -434,4 +442,20 @@ def pay_salary(
         status=salary.status,
         paid_at=salary.paid_at,
         notes=salary.notes,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Full data export
+# ---------------------------------------------------------------------------
+
+
+@router.get("/export")
+def export_all_data(db: Session = Depends(get_db), actor: User = Depends(require_role(Role.admin))):
+    buf = export.build_full_export(db)
+    filename = f"hms-export-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

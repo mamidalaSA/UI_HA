@@ -9,30 +9,44 @@ import {
   YAxis,
 } from "recharts";
 import { Badge } from "@/components/Badge";
-import { IconBed, IconChart, IconClipboard, IconHeart, IconUser, IconUsers } from "@/components/icons";
+import {
+  IconBed,
+  IconChart,
+  IconClipboard,
+  IconHeart,
+  IconTrendUp,
+  IconUser,
+  IconUsers,
+  IconWallet,
+} from "@/components/icons";
 import { Panel } from "@/components/Panel";
 import { StatCard } from "@/components/StatCard";
 import { DataTable, type Column } from "@/components/DataTable";
 import {
   getReportsSummary,
   listDepartments,
+  listDoctorStats,
   listPatients,
+  listSalaries,
   type Department,
+  type DoctorStats,
   type Patient,
   type ProfileStatus,
   type ReportsSummary,
+  type StaffSalaryRow,
 } from "../api";
 import { DonutChart } from "../components/DonutChart";
+import { DoctorLeaderboard } from "../components/DoctorLeaderboard";
+import { EmergencyBoard } from "../components/EmergencyBoard";
 
-// Demo-only static row shape — there is no appointments/scheduling endpoint in
-// the spec, so "Today's Appointments" is illustrative sample data, clearly
-// marked as such rather than backed by a real query.
-const DEMO_APPOINTMENTS = [
-  { time: "09:00 AM", patient: "Rahul Mehta", doctor: "Dr. Anjali Rao", department: "Cardiology", status: "Confirmed" },
-  { time: "10:30 AM", patient: "Sunita Verma", doctor: "Dr. Karan Shah", department: "Orthopedics", status: "Waiting" },
-  { time: "11:15 AM", patient: "Arjun Nair", doctor: "Dr. Priya Iyer", department: "General Medicine", status: "Confirmed" },
-  { time: "02:00 PM", patient: "Fatima Sheikh", doctor: "Dr. Anjali Rao", department: "Cardiology", status: "Waiting" },
-];
+function money(n: number): string {
+  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
+
+// Total ward capacity isn't in the schema (no beds/wards table), so this is a fixed
+// hospital-configuration constant — but "occupied" below is real, live data
+// (admitted_patients from reports/summary), not a hardcoded figure.
+const TOTAL_BED_CAPACITY = 80;
 
 const STATUS_TONE: Record<ProfileStatus, "green" | "blue" | "amber" | "red" | "slate"> = {
   draft: "slate",
@@ -42,30 +56,51 @@ const STATUS_TONE: Record<ProfileStatus, "green" | "blue" | "amber" | "red" | "s
   expired: "red",
 };
 
+const CURRENT_PERIOD = new Date().toISOString().slice(0, 7);
+
 export default function DashboardPage() {
   const [summary, setSummary] = useState<ReportsSummary | null>(null);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [doctorStats, setDoctorStats] = useState<DoctorStats[]>([]);
+  const [salaries, setSalaries] = useState<StaffSalaryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getReportsSummary(), listPatients().catch(() => []), listDepartments().catch(() => [])])
-      .then(([summaryRes, patientsRes, departmentsRes]) => {
-        if (cancelled) return;
-        setSummary(summaryRes);
-        setPatients(patientsRes);
-        setDepartments(departmentsRes);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err?.message ?? "Failed to load dashboard data");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+
+    const load = () =>
+      Promise.all([
+        getReportsSummary(),
+        listPatients().catch(() => []),
+        listDepartments().catch(() => []),
+        listDoctorStats().catch(() => []),
+        listSalaries(CURRENT_PERIOD).catch(() => []),
+      ])
+        .then(([summaryRes, patientsRes, departmentsRes, doctorStatsRes, salariesRes]) => {
+          if (cancelled) return;
+          setSummary(summaryRes);
+          setPatients(patientsRes);
+          setDepartments(departmentsRes);
+          setDoctorStats(doctorStatsRes);
+          setSalaries(salariesRes);
+          setLastUpdated(new Date());
+        })
+        .catch((err) => {
+          if (!cancelled) setError(err?.message ?? "Failed to load dashboard data");
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+
+    load();
+    // Light auto-refresh so the numbers keep moving during a live walkthrough.
+    const interval = setInterval(load, 60_000);
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, []);
 
@@ -106,6 +141,20 @@ export default function DashboardPage() {
     [patients]
   );
 
+  const totalCollected =
+    (summary?.consult_billing.paid_amount ?? 0) + (summary?.pharmacy_billing.paid_amount ?? 0);
+  const outstandingDues =
+    (summary?.consult_billing.pending_amount ?? 0) +
+    (summary?.pharmacy_billing.pending_amount ?? 0) +
+    (summary?.labs_daily.dues ?? 0);
+  const payrollPaid = salaries
+    .filter((s) => s.status === "paid")
+    .reduce((sum, s) => sum + (s.amount ?? 0), 0);
+  const payrollPending = salaries
+    .filter((s) => s.status !== "paid")
+    .reduce((sum, s) => sum + (s.amount ?? 0), 0);
+  const availableBeds = Math.max(0, TOTAL_BED_CAPACITY - (summary?.admitted_patients ?? 0));
+
   const departmentDonutData = useMemo(
     () =>
       (summary?.by_department ?? []).map((row) => ({
@@ -113,15 +162,6 @@ export default function DashboardPage() {
         value: row.count,
       })),
     [summary, departmentNameById]
-  );
-
-  const genderDonutData = useMemo(
-    () =>
-      (summary?.by_gender ?? []).map((row) => ({
-        label: row.gender,
-        value: row.count,
-      })),
-    [summary]
   );
 
   const admissionColumns: Column<Patient>[] = [
@@ -147,11 +187,27 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-800">Command Center</h2>
+          <p className="text-xs text-slate-400">
+            {lastUpdated ? (
+              <>
+                <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 align-middle" />
+                Live — updated {lastUpdated.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+              </>
+            ) : (
+              "Loading…"
+            )}
+          </p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard
           icon={<IconUsers className="h-6 w-6 text-blue-600" />}
           iconBg="bg-blue-100"
-          label="Total Patients"
+          label="Patients"
           value={loading ? "…" : summary?.total_patients ?? 0}
         />
         <StatCard
@@ -178,13 +234,38 @@ export default function DashboardPage() {
           label="Nurses"
           value={loading ? "…" : summary?.total_nurses ?? 0}
         />
-        {/* Beds aren't part of any table in the spec's schema — this is a static
-            demo placeholder, not backed by real data. */}
         <StatCard
           icon={<IconBed className="h-6 w-6 text-amber-600" />}
           iconBg="bg-amber-100"
           label="Available Beds"
-          value="54 (demo)"
+          value={loading ? "…" : availableBeds}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          icon={<IconTrendUp className="h-6 w-6 text-blue-600" />}
+          iconBg="bg-blue-100"
+          label="Total Collected (All-Time)"
+          value={loading ? "…" : money(totalCollected)}
+        />
+        <StatCard
+          icon={<IconChart className="h-6 w-6 text-red-600" />}
+          iconBg="bg-red-100"
+          label="Outstanding Dues"
+          value={loading ? "…" : money(outstandingDues)}
+        />
+        <StatCard
+          icon={<IconWallet className="h-6 w-6 text-emerald-600" />}
+          iconBg="bg-emerald-100"
+          label="Payroll Paid (This Month)"
+          value={loading ? "…" : money(payrollPaid)}
+        />
+        <StatCard
+          icon={<IconWallet className="h-6 w-6 text-amber-600" />}
+          iconBg="bg-amber-100"
+          label="Payroll Pending (This Month)"
+          value={loading ? "…" : money(payrollPending)}
         />
       </div>
 
@@ -211,34 +292,50 @@ export default function DashboardPage() {
           </div>
         </Panel>
 
-        <Panel title="Patients by Gender">
-          <DonutChart data={genderDonutData} />
+        <Panel title="Pharmacy & Labs — Today">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-slate-200 p-3">
+              <p className="text-xs font-medium text-slate-500">Pharmacy Collected Today</p>
+              <p className="text-lg font-bold text-emerald-700">
+                {loading ? "…" : `₹${(summary?.pharmacy_daily.collected_today ?? 0).toFixed(2)}`}
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-200 p-3">
+              <p className="text-xs font-medium text-slate-500">Pharmacy Dues</p>
+              <p className="text-lg font-bold text-amber-600">
+                {loading ? "…" : `₹${(summary?.pharmacy_daily.dues ?? 0).toFixed(2)}`}
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-200 p-3">
+              <p className="text-xs font-medium text-slate-500">Labs Collected Today</p>
+              <p className="text-lg font-bold text-emerald-700">
+                {loading ? "…" : `₹${(summary?.labs_daily.collected_today ?? 0).toFixed(2)}`}
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-200 p-3">
+              <p className="text-xs font-medium text-slate-500">Labs Dues</p>
+              <p className="text-lg font-bold text-amber-600">
+                {loading ? "…" : `₹${(summary?.labs_daily.dues ?? 0).toFixed(2)}`}
+              </p>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-slate-400">"Dues" is total currently outstanding, not limited to today.</p>
         </Panel>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
         <Panel title="Patients by Department">
           <DonutChart data={departmentDonutData} />
         </Panel>
 
-        <Panel title="Today's Appointments">
-          {/* No appointments/scheduling endpoint exists in the spec — demo data only. */}
-          <DataTable
-            columns={[
-              { header: "Time", render: (r) => r.time },
-              { header: "Patient", render: (r) => r.patient },
-              { header: "Doctor", render: (r) => r.doctor },
-              { header: "Department", render: (r) => r.department },
-              {
-                header: "Status",
-                render: (r) => <Badge tone={r.status === "Confirmed" ? "green" : "amber"}>{r.status}</Badge>,
-              },
-            ]}
-            rows={DEMO_APPOINTMENTS}
-            keyFor={(r) => `${r.time}-${r.patient}`}
-          />
+        <Panel title="Emergency Cases">
+          <EmergencyBoard patients={patients} departmentNameById={departmentNameById} />
         </Panel>
       </div>
+
+      <Panel title="Doctor Performance Leaderboard">
+        <DoctorLeaderboard doctors={doctorStats} />
+      </Panel>
 
       <Panel title="Recent Admissions">
         <DataTable columns={admissionColumns} rows={recentAdmissions} keyFor={(p) => p.id} emptyMessage="No admissions yet" />

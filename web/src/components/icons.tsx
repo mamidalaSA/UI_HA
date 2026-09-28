@@ -148,3 +148,15 @@ export const IconTransfer = (p: IconProps) => (
     <path d="M4 8h13l-3-3M20 16H7l3 3" />
   </svg>
 );
+export const IconWallet = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M3 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+    <path d="M16 12.5h3.5M3 9h18" />
+  </svg>
+);
+export const IconTrendUp = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M3 17 10 10l4 4 7-7" />
+    <path d="M15 6h6v6" />
+  </svg>
+);

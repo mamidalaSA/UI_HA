@@ -1,6 +1,7 @@
 import { apiClient } from "@/api/client";
 
 export type TestOrderStatus = "pending" | "in_progress" | "completed" | "reviewed" | "cancelled";
+export type LabPaymentStatus = "pending" | "paid" | "waived";
 
 export interface TestQueueItem {
   id: string;
@@ -13,6 +14,8 @@ export interface TestQueueItem {
   status: TestOrderStatus;
   ordered_at: string;
   notes: string | null;
+  amount: number;
+  payment_status: LabPaymentStatus;
 }
 
 export interface TestHistoryItem {
@@ -29,6 +32,9 @@ export interface TestHistoryItem {
   completed_at: string | null;
   reviewed_at: string | null;
   notes: string | null;
+  amount: number;
+  payment_status: LabPaymentStatus;
+  receipt_number: string | null;
 }
 
 export async function fetchQueue(): Promise<TestQueueItem[]> {
@@ -52,4 +58,8 @@ export async function completeTest(testId: string, resultText: string, file: Fil
 export async function fetchPatientTests(patientId: string): Promise<TestHistoryItem[]> {
   const { data } = await apiClient.get<TestHistoryItem[]>(`/api/patients/${patientId}/tests`);
   return data;
+}
+
+export async function collectTestPayment(testId: string, receiptNumber: string): Promise<void> {
+  await apiClient.patch(`/api/tests/${testId}/collect`, { receipt_number: receiptNumber });
 }

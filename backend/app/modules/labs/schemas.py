@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.labs.models import TestOrderStatus
+from app.modules.labs.models import LabPaymentStatus, TestOrderStatus
 
 
 class TestQueueOut(BaseModel):
@@ -21,6 +21,8 @@ class TestQueueOut(BaseModel):
     status: TestOrderStatus
     ordered_at: datetime
     notes: str | None = None
+    amount: float
+    payment_status: LabPaymentStatus
 
 
 class TestOrderOut(BaseModel):
@@ -39,6 +41,9 @@ class TestOrderOut(BaseModel):
     completed_at: datetime | None = None
     reviewed_at: datetime | None = None
     notes: str | None = None
+    amount: float
+    payment_status: LabPaymentStatus
+    receipt_number: str | None = None
 
 
 class TestHistoryOut(BaseModel):
@@ -59,3 +64,10 @@ class TestHistoryOut(BaseModel):
     completed_at: datetime | None = None
     reviewed_at: datetime | None = None
     notes: str | None = None
+    amount: float
+    payment_status: LabPaymentStatus
+    receipt_number: str | None = None
+
+
+class CollectTestPaymentRequest(BaseModel):
+    receipt_number: str = Field(min_length=1)

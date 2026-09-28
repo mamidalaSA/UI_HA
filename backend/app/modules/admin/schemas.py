@@ -177,6 +177,7 @@ class TestCatalogueCreate(BaseModel):
     category: str = Field(min_length=1, max_length=60)
     tat_min_hours: float = Field(gt=0)
     tat_max_hours: float = Field(gt=0)
+    price: float = Field(default=0, ge=0)
 
 
 class TestCatalogueUpdate(BaseModel):
@@ -185,6 +186,7 @@ class TestCatalogueUpdate(BaseModel):
     category: str | None = None
     tat_min_hours: float | None = None
     tat_max_hours: float | None = None
+    price: float | None = Field(default=None, ge=0)
 
 
 class TestCatalogueOut(BaseModel):
@@ -196,6 +198,7 @@ class TestCatalogueOut(BaseModel):
     category: str
     tat_min_hours: float
     tat_max_hours: float
+    price: float
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +316,13 @@ class BillingSummaryOut(BaseModel):
     waived_amount: float
 
 
+class DailyBillingOut(BaseModel):
+    """Today's collections vs. currently outstanding dues, for one billing stream."""
+
+    collected_today: float
+    dues: float
+
+
 class ReportsSummaryOut(BaseModel):
     total_patients: int
     admitted_patients: int
@@ -323,6 +333,30 @@ class ReportsSummaryOut(BaseModel):
     by_gender: list[GenderBreakdownItem]
     consult_billing: BillingSummaryOut
     pharmacy_billing: BillingSummaryOut
+    pharmacy_daily: DailyBillingOut
+    labs_daily: DailyBillingOut
+
+
+# ---------------------------------------------------------------------------
+# Doctor financials (income generated vs. salary paid, per doctor)
+# ---------------------------------------------------------------------------
+
+
+class DoctorStatsOut(BaseModel):
+    doctor_id: uuid.UUID
+    user_id: uuid.UUID
+    full_name: str
+    email: str
+    specialty: str
+    department_id: uuid.UUID | None
+    department_name: str | None
+    is_active: bool
+    patients_count: int
+    income_paid: float
+    income_pending: float
+    salary_paid: float
+    salary_pending: float
+    net_contribution: float
 
 
 # ---------------------------------------------------------------------------

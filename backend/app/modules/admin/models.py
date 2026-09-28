@@ -53,6 +53,10 @@ class TestCatalogue(Base, UUIDPKMixin, TimestampMixin):
     category: Mapped[str] = mapped_column(String(60))  # e.g. Pathology, Radiology, Cardiology
     tat_min_hours: Mapped[float] = mapped_column(DECIMAL(5, 2))
     tat_max_hours: Mapped[float] = mapped_column(DECIMAL(5, 2))
+    # Charged to the patient when a doctor orders this test — stamped onto the
+    # TestOrder at creation time (see doctors.service.create_test_order), same
+    # pattern as StockItem.unit_price for pharmacy dispensing.
+    price: Mapped[float] = mapped_column(DECIMAL(10, 2), default=0)
 
 
 class MedicineFormulary(Base, UUIDPKMixin, TimestampMixin):

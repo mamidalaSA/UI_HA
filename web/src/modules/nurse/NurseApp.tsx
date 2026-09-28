@@ -1,8 +1,9 @@
 import { useLocation, Route, Routes } from "react-router-dom";
 import { AppShell, type NavItem } from "@/components/AppShell";
-import { IconBell, IconCalendar, IconChart, IconClipboard, IconHome, IconUsers } from "@/components/icons";
+import { IconBed, IconBell, IconCalendar, IconChart, IconClipboard, IconHome, IconUsers } from "@/components/icons";
 import DashboardPage from "@/modules/nurse/pages/DashboardPage";
 import AlertsPage from "@/modules/nurse/pages/AlertsPage";
+import ICUKeysheetPage from "@/modules/nurse/pages/ICUKeysheetPage";
 import PatientsPage from "@/modules/nurse/pages/PatientsPage";
 import SchedulePage from "@/modules/nurse/pages/SchedulePage";
 import ObservationPickerPage from "@/modules/nurse/pages/ObservationPickerPage";
@@ -14,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "My Patients", to: "/nurse/patients", icon: IconUsers },
   { label: "Medication Schedule", to: "/nurse/schedule", icon: IconCalendar },
   { label: "Nurse Observation", to: "/nurse/observation", icon: IconClipboard },
+  { label: "ICU Key Sheet", to: "/nurse/icu-keysheet", icon: IconBed },
   { label: "Alerts", to: "/nurse/alerts", icon: IconBell },
   { label: "Reports", to: "/nurse/reports", icon: IconChart },
 ];
@@ -41,6 +43,7 @@ export default function NurseApp() {
         <Route path="/schedule" element={<SchedulePage />} />
         <Route path="/observation" element={<ObservationPickerPage />} />
         <Route path="/observation/:patientId" element={<ObservationPage />} />
+        <Route path="/icu-keysheet" element={<ICUKeysheetPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/reports" element={<ReportsPage />} />
       </Routes>

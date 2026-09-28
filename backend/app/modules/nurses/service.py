@@ -5,14 +5,15 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import record_audit
 from app.core.notify import doctor_user, notify_user
+from app.core.roles import Role
 from app.db.mixins import utcnow
 from app.modules.admin.models import VitalsConfig
 from app.modules.alerts.models import Alert, AlertStatus, RouteTo
 from app.modules.auth.models import User
-from app.modules.doctors.models import PrescriptionLine
+from app.modules.doctors.models import Doctor, PrescriptionLine
 from app.modules.nurses.models import MedicationLog, Vitals
 from app.modules.nurses.schemas import EscalationCreate, MedicationLogCreate, VitalsCreate
-from app.modules.patients.models import Patient
+from app.modules.patients.models import Patient, ProfileStatus
 
 
 class NurseServiceError(Exception):
@@ -246,6 +247,53 @@ def record_vitals(db: Session, *, user: User, patient: Patient, payload: VitalsC
 def list_vitals(db: Session, *, patient: Patient) -> list[Vitals]:
     stmt = select(Vitals).where(Vitals.patient_id == patient.id).order_by(Vitals.recorded_at.desc())
     return list(db.execute(stmt).scalars())
+
+
+def list_icu_keysheet(db: Session, *, user: User) -> list[dict]:
+    """GET /api/icu-keysheet — every active ICU patient's full vitals history in one
+    place, so a nurse's charting is the same thing a doctor or admin can monitor,
+    instead of vitals being visible only to whoever is logged in as that ward's nurse."""
+    query = select(Patient).where(Patient.ward == "ICU", Patient.profile_status == ProfileStatus.active)
+
+    if user.role == Role.admin:
+        pass
+    elif user.role == Role.head_nurse:
+        if not user.ward or user.ward != "ICU":
+            return []
+    elif user.role == Role.doctor:
+        doctor = db.execute(select(Doctor).where(Doctor.user_id == user.id)).scalar_one_or_none()
+        if doctor is None:
+            return []
+        query = query.where(Patient.doctor_id == doctor.id)
+    else:
+        raise ForbiddenError("Not permitted to view the ICU key sheet")
+
+    patients = list(db.execute(query.order_by(Patient.admitted_at.desc())).scalars())
+
+    doctor_ids = {p.doctor_id for p in patients if p.doctor_id is not None}
+    doctor_names: dict[uuid.UUID, str] = {}
+    if doctor_ids:
+        rows = db.execute(
+            select(Doctor.id, User.full_name).join(User, User.id == Doctor.user_id).where(Doctor.id.in_(doctor_ids))
+        ).all()
+        doctor_names = dict(rows)
+
+    result: list[dict] = []
+    for patient in patients:
+        vitals = db.execute(
+            select(Vitals).where(Vitals.patient_id == patient.id).order_by(Vitals.recorded_at.desc())
+        ).scalars()
+        result.append(
+            {
+                "patient_id": patient.id,
+                "full_name": patient.full_name,
+                "ward": patient.ward,
+                "doctor_name": doctor_names.get(patient.doctor_id) if patient.doctor_id else None,
+                "admitted_at": patient.admitted_at,
+                "vitals": list(vitals),
+            }
+        )
+    return result
 
 
 def list_medication_log(db: Session, *, patient: Patient) -> list[MedicationLog]:

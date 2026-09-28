@@ -1,8 +1,24 @@
+import axios from "axios";
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { ROLE_HOME } from "@/lib/roles";
 import { IconLock, IconUser } from "@/components/icons";
+
+function loginErrorMessage(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    if (!err.response) {
+      // Request never reached the server: dead tunnel, network drop, CORS block, etc.
+      // Distinct from a wrong password, and much more common when this API base URL
+      // points at a temporary public tunnel that can die without warning.
+      return "Can't reach the server. Check your connection, or the server may be temporarily down.";
+    }
+    if (err.response.status === 401) return "Invalid email or password";
+    if (err.response.status === 429) return "Too many attempts — please wait a moment and try again";
+    return "Something went wrong signing in. Please try again.";
+  }
+  return "Something went wrong signing in. Please try again.";
+}
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -19,8 +35,8 @@ export default function LoginPage() {
     try {
       const user = await login(email, password);
       navigate(ROLE_HOME[user.role]);
-    } catch {
-      setError("Invalid email or password");
+    } catch (err) {
+      setError(loginErrorMessage(err));
     } finally {
       setSubmitting(false);
     }

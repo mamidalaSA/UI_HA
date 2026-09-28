@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -39,6 +39,7 @@ from app.modules.admin.schemas import (
 )
 from app.modules.auth.models import User
 from app.modules.doctors.models import Doctor, DoctorRoster
+from app.modules.labs.models import LabPaymentStatus, TestOrder
 from app.modules.patients.models import AdmissionType, PaymentStatus, Patient, ProfileStatus
 from app.modules.pharmacy.models import BillingEntry, BillingPaymentStatus
 
@@ -417,6 +418,7 @@ def create_test_catalogue(db: Session, *, payload: TestCatalogueCreate, actor: U
         category=payload.category,
         tat_min_hours=payload.tat_min_hours,
         tat_max_hours=payload.tat_max_hours,
+        price=payload.price,
     )
     db.add(entry)
     db.flush()
@@ -463,6 +465,8 @@ def update_test_catalogue(
         entry.tat_min_hours = payload.tat_min_hours
     if payload.tat_max_hours is not None:
         entry.tat_max_hours = payload.tat_max_hours
+    if payload.price is not None:
+        entry.price = payload.price
 
     db.flush()
     record_audit(
@@ -758,7 +762,36 @@ def reports_summary(db: Session) -> dict:
         "by_gender": by_gender,
         "consult_billing": consult_billing,
         "pharmacy_billing": pharmacy_billing,
+        "pharmacy_daily": _daily_billing(
+            db, amount_col=BillingEntry.amount, status_col=BillingEntry.payment_status,
+            paid_at_col=BillingEntry.paid_at, paid_status=BillingPaymentStatus.paid,
+            pending_status=BillingPaymentStatus.pending,
+        ),
+        "labs_daily": _daily_billing(
+            db, amount_col=TestOrder.amount, status_col=TestOrder.payment_status,
+            paid_at_col=TestOrder.paid_at, paid_status=LabPaymentStatus.paid,
+            pending_status=LabPaymentStatus.pending,
+        ),
     }
+
+
+def _daily_billing(db: Session, *, amount_col, status_col, paid_at_col, paid_status, pending_status) -> dict:
+    """Shared today's-collections-vs-outstanding-dues computation for any billing
+    stream that follows the amount/payment_status/paid_at shape (pharmacy, labs)."""
+    today = datetime.now(timezone.utc).date()
+    today_start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
+    today_end = today_start + timedelta(days=1)
+
+    collected_today = db.execute(
+        select(func.coalesce(func.sum(amount_col), 0)).where(
+            status_col == paid_status, paid_at_col >= today_start, paid_at_col < today_end
+        )
+    ).scalar_one()
+    dues = db.execute(
+        select(func.coalesce(func.sum(amount_col), 0)).where(status_col == pending_status)
+    ).scalar_one()
+
+    return {"collected_today": float(collected_today), "dues": float(dues)}
 
 
 # ---------------------------------------------------------------------------
@@ -920,3 +953,88 @@ def mark_salary_paid(db: Session, *, salary_id: uuid.UUID, actor: User) -> Staff
     db.commit()
     db.refresh(salary)
     return salary
+
+
+# ---------------------------------------------------------------------------
+# Doctor financials (income generated vs. salary paid, per doctor)
+# ---------------------------------------------------------------------------
+
+
+def list_doctor_stats(db: Session) -> list[dict]:
+    """Per-doctor consult-fee income (their assigned patients' bills) against what
+    they've been paid in salary — an all-time profitability view, not scoped to a
+    single period, so admin sees the full picture per doctor at a glance."""
+    fee = func.coalesce(Patient.consult_fee, 0)
+    income_rows = {
+        row.doctor_id: row
+        for row in db.execute(
+            select(
+                Patient.doctor_id.label("doctor_id"),
+                func.count(Patient.id).label("patients_count"),
+                func.sum(case((Patient.payment_status == PaymentStatus.paid, fee), else_=0)).label("income_paid"),
+                func.sum(
+                    case(
+                        (
+                            Patient.payment_status.in_(
+                                [PaymentStatus.pending, PaymentStatus.link_sent, PaymentStatus.deferred]
+                            ),
+                            fee,
+                        ),
+                        else_=0,
+                    )
+                ).label("income_pending"),
+            )
+            .where(Patient.doctor_id.is_not(None))
+            .group_by(Patient.doctor_id)
+        ).all()
+    }
+
+    salary_rows = {
+        row.user_id: row
+        for row in db.execute(
+            select(
+                StaffSalary.user_id.label("user_id"),
+                func.sum(case((StaffSalary.status == SalaryStatus.paid, StaffSalary.amount), else_=0)).label(
+                    "salary_paid"
+                ),
+                func.sum(case((StaffSalary.status == SalaryStatus.pending, StaffSalary.amount), else_=0)).label(
+                    "salary_pending"
+                ),
+            ).group_by(StaffSalary.user_id)
+        ).all()
+    }
+
+    doctors = db.execute(
+        select(Doctor, User, Department)
+        .join(User, User.id == Doctor.user_id)
+        .outerjoin(Department, Department.id == Doctor.department_id)
+        .order_by(User.full_name)
+    ).all()
+
+    result: list[dict] = []
+    for doctor, user, department in doctors:
+        income = income_rows.get(doctor.id)
+        salary = salary_rows.get(user.id)
+        income_paid = float(income.income_paid or 0) if income else 0.0
+        income_pending = float(income.income_pending or 0) if income else 0.0
+        salary_paid = float(salary.salary_paid or 0) if salary else 0.0
+        salary_pending = float(salary.salary_pending or 0) if salary else 0.0
+        result.append(
+            {
+                "doctor_id": doctor.id,
+                "user_id": user.id,
+                "full_name": user.full_name,
+                "email": user.email,
+                "specialty": doctor.specialty,
+                "department_id": doctor.department_id,
+                "department_name": department.name if department else None,
+                "is_active": doctor.is_active,
+                "patients_count": int(income.patients_count) if income else 0,
+                "income_paid": income_paid,
+                "income_pending": income_pending,
+                "salary_paid": salary_paid,
+                "salary_pending": salary_pending,
+                "net_contribution": income_paid - salary_paid,
+            }
+        )
+    return result

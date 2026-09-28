@@ -8,7 +8,7 @@ from app.core.roles import Role
 from app.db.session import get_db
 from app.modules.auth.models import User
 from app.modules.labs import service
-from app.modules.labs.schemas import TestHistoryOut, TestOrderOut, TestQueueOut
+from app.modules.labs.schemas import CollectTestPaymentRequest, TestHistoryOut, TestOrderOut, TestQueueOut
 
 router = APIRouter(prefix="/api", tags=["lab"])
 
@@ -63,6 +63,21 @@ async def complete_test(
         "result_file_url": order.result_file_url,
         "completed_at": order.completed_at,
     }
+
+
+@router.patch("/tests/{test_id}/collect", response_model=TestOrderOut)
+def collect_payment(
+    test_id: uuid.UUID,
+    payload: CollectTestPaymentRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.lab_staff, Role.admin)),
+):
+    try:
+        return service.collect_payment(db, order_id=test_id, receipt_number=payload.receipt_number, user_id=user.id)
+    except service.NotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except service.LabError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 @router.get("/patients/{patient_id}/tests", response_model=list[TestHistoryOut])

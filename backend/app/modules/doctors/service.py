@@ -140,6 +140,7 @@ def create_test_order(
         test_type_id=test_type_id,
         status=TestOrderStatus.pending,
         notes=notes,
+        amount=float(catalogue_entry.price),
     )
     db.add(order)
     db.flush()

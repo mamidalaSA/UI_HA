@@ -10,11 +10,13 @@ import {
   listDepartments,
   listDoctorRoster,
   listDoctors,
+  listDoctorStats,
   updateUser,
   upsertDoctorRoster,
   type Department,
   type Doctor,
   type DoctorRoster,
+  type DoctorStats,
 } from "../api";
 
 const DAY_LABELS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -51,6 +53,10 @@ export default function DoctorManagementPage() {
   const [rosterRows, setRosterRows] = useState<RosterRow[]>(defaultRosterRows());
   const [rosterLoading, setRosterLoading] = useState(false);
 
+  const [stats, setStats] = useState<DoctorStats[]>([]);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
+
   function loadDoctors() {
     setLoading(true);
     Promise.all([listDoctors(), listDepartments().catch(() => [])])
@@ -62,7 +68,16 @@ export default function DoctorManagementPage() {
       .finally(() => setLoading(false));
   }
 
+  function loadStats() {
+    setStatsLoading(true);
+    listDoctorStats()
+      .then(setStats)
+      .catch((err) => setStatsError(err?.response?.data?.detail ?? "Failed to load doctor financials"))
+      .finally(() => setStatsLoading(false));
+  }
+
   useEffect(loadDoctors, []);
+  useEffect(loadStats, []);
 
   const departmentNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -179,6 +194,59 @@ export default function DoctorManagementPage() {
       >
         {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
         <DataTable columns={columns} rows={doctors} keyFor={(d) => d.id} emptyMessage={loading ? "Loading..." : "No doctors yet"} />
+      </Panel>
+
+      <Panel
+        title="Doctor Financials"
+        action={
+          <button onClick={loadStats} className="text-xs font-semibold text-admin-accent hover:underline">
+            Refresh
+          </button>
+        }
+      >
+        {statsError && <p className="mb-3 text-sm text-red-600">{statsError}</p>}
+        <p className="mb-3 text-xs text-slate-400">
+          Income = collected consult fees for each doctor's patients. Salary is set and marked paid from Staff
+          Salaries. Net = income collected minus salary paid.
+        </p>
+        <DataTable
+          columns={
+            [
+              { header: "Doctor", render: (d) => <span className="font-medium text-slate-800">{d.full_name}</span> },
+              { header: "Specialty", render: (d) => d.specialty },
+              { header: "Patients", render: (d) => d.patients_count },
+              {
+                header: "Income (collected / pending)",
+                render: (d) => (
+                  <span>
+                    <span className="font-medium text-emerald-700">₹{d.income_paid.toFixed(2)}</span>
+                    {d.income_pending > 0 && <span className="text-amber-600"> / ₹{d.income_pending.toFixed(2)}</span>}
+                  </span>
+                ),
+              },
+              {
+                header: "Salary (paid / pending)",
+                render: (d) => (
+                  <span>
+                    <span className="font-medium text-slate-700">₹{d.salary_paid.toFixed(2)}</span>
+                    {d.salary_pending > 0 && <span className="text-amber-600"> / ₹{d.salary_pending.toFixed(2)}</span>}
+                  </span>
+                ),
+              },
+              {
+                header: "Net",
+                render: (d) => (
+                  <span className={`font-semibold ${d.net_contribution >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                    {d.net_contribution >= 0 ? "+" : "-"}₹{Math.abs(d.net_contribution).toFixed(2)}
+                  </span>
+                ),
+              },
+            ] as Column<DoctorStats>[]
+          }
+          rows={stats}
+          keyFor={(d) => d.doctor_id}
+          emptyMessage={statsLoading ? "Loading..." : "No doctors yet"}
+        />
       </Panel>
 
       <Panel title="Weekly Duty Roster">

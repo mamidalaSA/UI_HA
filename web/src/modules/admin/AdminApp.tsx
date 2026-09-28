@@ -4,12 +4,14 @@ import { AppShell, type NavItem } from "@/components/AppShell";
 import {
   IconBed,
   IconBell,
+  IconCalendar,
   IconChart,
   IconClipboard,
   IconFile,
   IconFlask,
   IconHeart,
   IconHome,
+  IconMail,
   IconMapPin,
   IconPill,
   IconSearch,
@@ -24,9 +26,12 @@ import AuditLogPage from "./pages/AuditLogPage";
 import DashboardPage from "./pages/DashboardPage";
 import DepartmentManagementPage from "./pages/DepartmentManagementPage";
 import DoctorManagementPage from "./pages/DoctorManagementPage";
+import HomePage from "./pages/HomePage";
+import ICUKeysheetPage from "./pages/ICUKeysheetPage";
 import MedicineFormularyPage from "./pages/MedicineFormularyPage";
 import NurseManagementPage from "./pages/NurseManagementPage";
 import PatientManagementPage from "./pages/PatientManagementPage";
+import ReceptionManagementPage from "./pages/ReceptionManagementPage";
 import { SpecialtyMappingWithDepartments } from "./pages/SpecialtyMappingPage";
 import StaffSalariesPage from "./pages/StaffSalariesPage";
 import SystemSettingsPage from "./pages/SystemSettingsPage";
@@ -34,11 +39,14 @@ import TestCataloguePage from "./pages/TestCataloguePage";
 import VitalsConfigPage from "./pages/VitalsConfigPage";
 
 const NAV_ITEMS: NavItem[] = [
+  { label: "Homepage", to: "/admin/home", icon: IconCalendar },
   { label: "Dashboard", to: "/admin", icon: IconHome, end: true },
   { label: "Patient Management", to: "/admin/patients", icon: IconUsers },
   { label: "Staff Salaries", to: "/admin/salaries", icon: IconClipboard },
+  { label: "Reception Management", to: "/admin/reception", icon: IconMail },
   { label: "Doctor Management", to: "/admin/doctors", icon: IconUser },
   { label: "Nurse Management", to: "/admin/nurses", icon: IconHeart },
+  { label: "ICU Key Sheet", to: "/admin/icu-keysheet", icon: IconBed },
   { label: "Department Management", to: "/admin/departments", icon: IconMapPin },
   { label: "Test Catalogue", to: "/admin/test-catalogue", icon: IconFlask },
   { label: "Medicine Formulary", to: "/admin/medicine-formulary", icon: IconPill },
@@ -50,11 +58,14 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 const PAGE_TITLES: Record<string, string> = {
+  "/admin/home": "Homepage",
   "/admin": "Dashboard",
   "/admin/patients": "Patient Management",
   "/admin/salaries": "Staff Salaries",
+  "/admin/reception": "Reception Management",
   "/admin/doctors": "Doctor Management",
   "/admin/nurses": "Nurse Management",
+  "/admin/icu-keysheet": "ICU Key Sheet",
   "/admin/departments": "Department Management",
   "/admin/test-catalogue": "Test Catalogue",
   "/admin/medicine-formulary": "Medicine Formulary",
@@ -96,6 +107,15 @@ function AdminLayout() {
       navItems={NAV_ITEMS}
       pageTitle={pageTitle}
       notificationCount={notificationCount}
+      sidebarFooter={
+        <div className="rounded-lg bg-white/10 px-3 py-3">
+          <p className="mb-1 text-[11px] font-semibold tracking-wide text-blue-200/70">System Status</p>
+          <p className="flex items-center gap-1.5 text-xs font-medium text-white">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+            All Systems Operational
+          </p>
+        </div>
+      }
       headerRight={
         <div className="relative hidden md:block">
           <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -111,20 +131,6 @@ function AdminLayout() {
       <div className="flex flex-col gap-6">
         <Outlet />
       </div>
-
-      {/* Static "System Status" box, positioned to sit at the bottom of the sidebar
-          (matches the reference screenshot). AppShell owns the sidebar markup and
-          is off-limits to edit, so this is a fixed overlay sized to the sidebar's
-          default expanded width (w-64) rather than an injected child — it lines up
-          correctly when the sidebar is expanded (the default state) and is purely
-          decorative/static either way. */}
-      <div className="pointer-events-none fixed bottom-20 left-4 z-10 w-56 rounded-lg bg-white/10 px-3 py-3">
-        <p className="mb-1 text-[11px] font-semibold tracking-wide text-blue-200/70">System Status</p>
-        <p className="flex items-center gap-1.5 text-xs font-medium text-white">
-          <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
-          All Systems Operational
-        </p>
-      </div>
     </AppShell>
   );
 }
@@ -134,10 +140,13 @@ export default function AdminApp() {
     <Routes>
       <Route element={<AdminLayout />}>
         <Route index element={<DashboardPage />} />
+        <Route path="home" element={<HomePage />} />
         <Route path="patients" element={<PatientManagementPage />} />
         <Route path="salaries" element={<StaffSalariesPage />} />
+        <Route path="reception" element={<ReceptionManagementPage />} />
         <Route path="doctors" element={<DoctorManagementPage />} />
         <Route path="nurses" element={<NurseManagementPage />} />
+        <Route path="icu-keysheet" element={<ICUKeysheetPage />} />
         <Route path="departments" element={<DepartmentManagementPage />} />
         <Route path="test-catalogue" element={<TestCataloguePage />} />
         <Route path="medicine-formulary" element={<MedicineFormularyPage />} />

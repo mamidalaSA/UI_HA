@@ -91,6 +91,28 @@ export interface Doctor {
   specialty: string;
 }
 
+export interface DoctorStats {
+  doctor_id: string;
+  user_id: string;
+  full_name: string;
+  email: string;
+  specialty: string;
+  department_id: string | null;
+  department_name: string | null;
+  is_active: boolean;
+  patients_count: number;
+  income_paid: number;
+  income_pending: number;
+  salary_paid: number;
+  salary_pending: number;
+  net_contribution: number;
+}
+
+export async function listDoctorStats(): Promise<DoctorStats[]> {
+  const { data } = await apiClient.get<DoctorStats[]>("/api/admin/doctors/stats");
+  return data;
+}
+
 export async function listDoctors(): Promise<Doctor[]> {
   const { data } = await apiClient.get("/api/admin/doctors");
   return data;
@@ -233,6 +255,7 @@ export interface TestCatalogueEntry {
   category: string;
   tat_min_hours: number;
   tat_max_hours: number;
+  price: number;
 }
 
 export async function listTestCatalogue(): Promise<TestCatalogueEntry[]> {
@@ -246,6 +269,7 @@ export async function createTestCatalogueEntry(payload: {
   category: string;
   tat_min_hours: number;
   tat_max_hours: number;
+  price?: number;
 }): Promise<TestCatalogueEntry> {
   const { data } = await apiClient.post("/api/admin/test-catalogue", payload);
   return data;
@@ -259,6 +283,7 @@ export async function updateTestCatalogueEntry(
     category: string;
     tat_min_hours: number;
     tat_max_hours: number;
+    price: number;
   }>
 ): Promise<TestCatalogueEntry> {
   const { data } = await apiClient.patch(`/api/admin/test-catalogue/${id}`, payload);
@@ -427,6 +452,13 @@ export interface ReportsSummary {
   by_gender: GenderBreakdownItem[];
   consult_billing: BillingSummary;
   pharmacy_billing: BillingSummary;
+  pharmacy_daily: DailyBilling;
+  labs_daily: DailyBilling;
+}
+
+export interface DailyBilling {
+  collected_today: number;
+  dues: number;
 }
 
 export async function getReportsSummary(): Promise<ReportsSummary> {
@@ -496,10 +528,58 @@ export async function paySalary(salaryId: string): Promise<StaffSalaryRow> {
 }
 
 // ---------------------------------------------------------------------------
+// Full data export
+// ---------------------------------------------------------------------------
+
+/** Downloads the full hospital export (.xlsx) and saves it via the browser —
+ * a plain <a href> can't carry the auth header, so this fetches as a blob and
+ * triggers the save itself. */
+export async function downloadFullExport(): Promise<void> {
+  const response = await apiClient.get("/api/admin/export", { responseType: "blob" });
+  const disposition = response.headers["content-disposition"] as string | undefined;
+  const match = disposition?.match(/filename="?([^"]+)"?/);
+  const filename = match?.[1] ?? "hms-export.xlsx";
+
+  const url = window.URL.createObjectURL(response.data);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
 // Patients (read-only reuse of reception's endpoint — GET /api/patients)
 // ---------------------------------------------------------------------------
 
 export async function listPatients(): Promise<Patient[]> {
   const { data } = await apiClient.get("/api/patients");
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Lab queue (read-only reuse of lab's endpoint — admin is allowed)
+// ---------------------------------------------------------------------------
+
+export type TestOrderStatus = "pending" | "in_progress" | "completed" | "reviewed" | "cancelled";
+
+export interface LabQueueItem {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  doctor_id: string;
+  test_type_id: string;
+  test_name: string;
+  category: string;
+  status: TestOrderStatus;
+  ordered_at: string;
+  notes: string | null;
+  amount: number;
+}
+
+export async function listLabQueue(): Promise<LabQueueItem[]> {
+  const { data } = await apiClient.get("/api/lab/queue");
   return data;
 }

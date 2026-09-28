@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Panel } from "@/components/Panel";
-import { getPushOutbox, getSmsOutbox } from "../api";
+import { downloadFullExport, getPushOutbox, getSmsOutbox } from "../api";
 
 interface SmsEntry {
   to: string;
@@ -20,6 +20,8 @@ export default function SystemSettingsPage() {
   const [sms, setSms] = useState<SmsEntry[]>([]);
   const [push, setPush] = useState<PushEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   function load() {
     setLoading(true);
@@ -33,8 +35,35 @@ export default function SystemSettingsPage() {
 
   useEffect(load, []);
 
+  async function handleExport() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await downloadFullExport();
+    } catch {
+      setExportError("Could not generate the export. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
+      <Panel title="Full Data Export">
+        <p className="mb-3 text-sm text-slate-600">
+          Download a single spreadsheet with every hospital record — patients, doctors, nurses, other staff, consult
+          and pharmacy and lab billing, stock, catalogues, staff salaries, and the recent audit log — one sheet each.
+        </p>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="rounded-lg bg-admin-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+        >
+          {exporting ? "Preparing…" : "Download Full Report (.xlsx)"}
+        </button>
+        {exportError && <p className="mt-2 text-sm text-red-600">{exportError}</p>}
+      </Panel>
+
       <Panel title="System Information">
         <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
           <div>

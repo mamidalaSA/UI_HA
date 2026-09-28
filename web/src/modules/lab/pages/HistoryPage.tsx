@@ -1,10 +1,19 @@
+import axios from "axios";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { Badge } from "@/components/Badge";
 import { Panel } from "@/components/Panel";
+import { Modal } from "@/components/Modal";
 import { DataTable, type Column } from "@/components/DataTable";
 import { IconSearch, IconFile } from "@/components/icons";
 import { StatusBadge } from "@/modules/lab/components/StatusBadge";
-import { fetchPatientTests, type TestHistoryItem } from "@/modules/lab/api";
+import { collectTestPayment, fetchPatientTests, type LabPaymentStatus, type TestHistoryItem } from "@/modules/lab/api";
+
+const PAYMENT_TONE: Record<LabPaymentStatus, "green" | "amber" | "blue"> = {
+  paid: "green",
+  pending: "amber",
+  waived: "blue",
+};
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
@@ -19,6 +28,11 @@ export function HistoryPage() {
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [collectTarget, setCollectTarget] = useState<TestHistoryItem | null>(null);
+  const [receiptNumber, setReceiptNumber] = useState("");
+  const [collectBusy, setCollectBusy] = useState(false);
+  const [collectError, setCollectError] = useState<string | null>(null);
 
   async function runSearch(id: string) {
     if (!id.trim()) return;
@@ -66,7 +80,49 @@ export function HistoryPage() {
           <span className="text-slate-400">No file</span>
         ),
     },
+    {
+      header: "Billing",
+      render: (row) => (
+        <div>
+          <Badge tone={PAYMENT_TONE[row.payment_status]}>
+            ₹{row.amount.toFixed(2)} · {row.payment_status}
+          </Badge>
+          {row.payment_status === "pending" && (
+            <button
+              type="button"
+              onClick={() => {
+                setCollectTarget(row);
+                setReceiptNumber("");
+                setCollectError(null);
+              }}
+              className="ml-2 text-xs font-semibold text-lab-accent hover:underline"
+            >
+              Collect
+            </button>
+          )}
+        </div>
+      ),
+    },
   ];
+
+  async function handleCollectSubmit() {
+    if (!collectTarget || !receiptNumber.trim()) return;
+    setCollectBusy(true);
+    setCollectError(null);
+    try {
+      await collectTestPayment(collectTarget.id, receiptNumber.trim());
+      setCollectTarget(null);
+      await runSearch(patientId);
+    } catch (err) {
+      let text = "Could not collect payment. Please try again.";
+      if (axios.isAxiosError<{ detail?: string }>(err) && typeof err.response?.data?.detail === "string") {
+        text = err.response.data.detail;
+      }
+      setCollectError(text);
+    } finally {
+      setCollectBusy(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -111,6 +167,42 @@ export function HistoryPage() {
           <DataTable columns={columns} rows={items} keyFor={(row) => row.id} emptyMessage="No test history for this patient" />
         )}
       </Panel>
+
+      <Modal
+        open={collectTarget !== null}
+        onClose={() => setCollectTarget(null)}
+        title={`Collect payment — ${collectTarget?.test_name ?? ""}`}
+        footer={
+          <>
+            <button onClick={() => setCollectTarget(null)} className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100">
+              Cancel
+            </button>
+            <button
+              onClick={handleCollectSubmit}
+              disabled={collectBusy || !receiptNumber.trim()}
+              className="rounded-md bg-lab-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+            >
+              {collectBusy ? "Saving…" : "Collect"}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">
+            Amount due: <span className="font-semibold text-slate-800">₹{collectTarget?.amount.toFixed(2)}</span>
+          </p>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Receipt Number</label>
+            <input
+              value={receiptNumber}
+              onChange={(e) => setReceiptNumber(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-lab-accent"
+              placeholder="e.g. LAB-00231"
+            />
+          </div>
+          {collectError && <p className="text-sm font-medium text-red-600">{collectError}</p>}
+        </div>
+      </Modal>
     </div>
   );
 }

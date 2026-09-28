@@ -39,6 +39,25 @@ def require_own_patient_as_nurse(patient_id: uuid.UUID, user: User = Depends(get
     return patient
 
 
+def require_patient_view_access(patient_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Patient:
+    """Read-only monitoring access, for endpoints a nurse writes to but a doctor or
+    admin should also be able to watch: head_nurse (own ward), doctor (own assigned
+    patient), or admin (any patient). Writing stays nurse-only — this is view-only."""
+    patient = db.get(Patient, patient_id)
+    if patient is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Patient not found")
+    if user.role == Role.admin:
+        return patient
+    if user.role == Role.head_nurse:
+        if user.ward and patient.ward == user.ward:
+            return patient
+    if user.role == Role.doctor:
+        doctor = db.execute(select(Doctor).where(Doctor.user_id == user.id)).scalar_one_or_none()
+        if doctor is not None and patient.doctor_id == doctor.id:
+            return patient
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "Not permitted to view this patient")
+
+
 def get_doctor_profile(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Doctor:
     if user.role != Role.doctor:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Doctor role required")

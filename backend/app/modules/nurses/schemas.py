@@ -98,6 +98,20 @@ class VitalsOut(BaseModel):
     notes: str | None
 
 
+class ICUKeysheetPatientOut(BaseModel):
+    """One patient's row on the ICU Key Sheet — identity + their full vitals history,
+    so nurse/doctor/admin all see the same consolidated ICU monitoring view."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    patient_id: uuid.UUID
+    full_name: str
+    ward: str | None
+    doctor_name: str | None
+    admitted_at: datetime | None
+    vitals: list[VitalsOut]
+
+
 class EscalationCreate(BaseModel):
     patient_id: uuid.UUID
     message: str

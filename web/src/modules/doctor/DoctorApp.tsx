@@ -1,7 +1,8 @@
 import { Route, Routes } from "react-router-dom";
 import { AppShell, type NavItem } from "@/components/AppShell";
-import { IconChart, IconClipboard, IconFlask, IconHome, IconPill, IconUsers } from "@/components/icons";
+import { IconBed, IconChart, IconClipboard, IconFlask, IconHome, IconPill, IconUsers } from "@/components/icons";
 import DashboardPage from "./pages/DashboardPage";
+import ICUKeysheetPage from "./pages/ICUKeysheetPage";
 import PatientsListPage from "./pages/PatientsListPage";
 import PatientDetailPage from "./pages/PatientDetailPage";
 import PrescriptionsPage from "./pages/PrescriptionsPage";
@@ -14,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "My Patients", to: "/doctor/patients", icon: IconUsers },
   { label: "Prescriptions", to: "/doctor/prescriptions", icon: IconPill },
   { label: "Tests & Scans", to: "/doctor/tests", icon: IconFlask },
+  { label: "ICU Key Sheet", to: "/doctor/icu-keysheet", icon: IconBed },
   { label: "Reports", to: "/doctor/reports", icon: IconChart },
   { label: "Consultations", to: "/doctor/consultations", icon: IconClipboard },
 ];
@@ -33,6 +35,7 @@ export default function DoctorApp() {
         <Route path="patients/:id" element={<PatientDetailPage />} />
         <Route path="prescriptions" element={<PrescriptionsPage />} />
         <Route path="tests" element={<TestsPage />} />
+        <Route path="icu-keysheet" element={<ICUKeysheetPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="consultations" element={<ConsultationsPage />} />
         <Route path="*" element={<DashboardPage />} />
